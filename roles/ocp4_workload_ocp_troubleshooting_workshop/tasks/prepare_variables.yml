@@ -1,0 +1,4 @@
+---
+- name: Set user data fact from agnosticd_user_data lookup
+  ansible.builtin.set_fact:
+    _workload_user_data: "{{ lookup('agnosticd.core.agnosticd_user_data', '*') }}"

@@ -1,4 +1,7 @@
 ---
+- name: Prepare variables
+  ansible.builtin.include_tasks: prepare_variables.yml
+
 - name: Remove lab namespace for each user
   kubernetes.core.k8s:
     state: absent
@@ -6,10 +9,8 @@
       apiVersion: v1
       kind: Namespace
       metadata:
-        name: >-
-          {{ ocp4_workload_authentication_htpasswd_user_base }}{{ item }}-lab
-  loop: >-
-    {{ range(1, ocp4_workload_authentication_htpasswd_user_count | int + 1) | list }}
+        name: "{{ item.key }}-lab"
+  loop: "{{ _workload_user_data.users | dict2items }}"
   loop_control:
-    label: >-
-      {{ ocp4_workload_authentication_htpasswd_user_base }}{{ item }}-lab
+    label: "{{ item.key }}-lab"
+  when: _workload_user_data.users is defined
