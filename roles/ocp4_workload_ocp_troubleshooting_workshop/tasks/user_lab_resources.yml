@@ -3,7 +3,7 @@
 # Called per-user with loop_var: user (user.key = username, user.value = user data)
 # Creates one namespace per module with RBAC, quota, limitrange, and showroom SA access.
 
-- name: "Create {{ user.key }}-{{ item.module }} namespace"
+- name: "Create module namespaces for {{ user.key }}"
   kubernetes.core.k8s:
     state: present
     template: namespace-module.yaml.j2
@@ -14,7 +14,7 @@
   loop_control:
     label: "{{ user.key }}-{{ item.module }}"
 
-- name: "Grant {{ item.access }} access in {{ user.key }}-{{ item.module }}"
+- name: "Grant module RBAC access for {{ user.key }}"
   kubernetes.core.k8s:
     state: present
     template: rolebinding-module.yaml.j2
@@ -26,7 +26,7 @@
   loop_control:
     label: "{{ user.key }}-{{ item.module }}"
 
-- name: "Grant showroom SA admin access to {{ user.key }}-{{ item.module }}"
+- name: "Grant showroom SA admin access for {{ user.key }}"
   kubernetes.core.k8s:
     state: present
     template: rolebinding-showroom.yaml.j2
@@ -37,7 +37,7 @@
   loop_control:
     label: "{{ user.key }}-{{ item.module }}"
 
-- name: "Apply safety quota to {{ user.key }}-{{ item.module }}"
+- name: "Apply safety quotas for {{ user.key }}"
   kubernetes.core.k8s:
     state: present
     namespace: "{{ user.key }}-{{ item.module }}"
@@ -46,7 +46,7 @@
   loop_control:
     label: "{{ user.key }}-{{ item.module }}"
 
-- name: "Apply default LimitRange to {{ user.key }}-{{ item.module }}"
+- name: "Apply default LimitRanges for {{ user.key }}"
   kubernetes.core.k8s:
     state: present
     namespace: "{{ user.key }}-{{ item.module }}"
