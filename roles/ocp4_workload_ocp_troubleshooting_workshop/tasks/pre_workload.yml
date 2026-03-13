@@ -6,10 +6,18 @@
     api_version: storage.k8s.io/v1
     kind: StorageClass
   register: r_storageclasses
-  failed_when: >-
+
+- name: Assert a default StorageClass exists
+  ansible.builtin.fail:
+    msg: "No default StorageClass found on this cluster"
+  when: >-
     r_storageclasses.resources
-    | selectattr('metadata.annotations["storageclass.kubernetes.io/is-default-class"]', 'defined')
-    | selectattr('metadata.annotations["storageclass.kubernetes.io/is-default-class"]', 'equalto', 'true')
+    | selectattr('metadata.annotations', 'defined')
+    | map(attribute='metadata.annotations')
+    | map('dict2items')
+    | flatten
+    | selectattr('key', 'equalto', 'storageclass.kubernetes.io/is-default-class')
+    | selectattr('value', 'equalto', 'true')
     | list | length == 0
 
 - name: Verify gold-storage StorageClass does not exist
