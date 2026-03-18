@@ -7,6 +7,6 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      lab: "4-4"    # scoped: only blocks pods with this label
+      app: lab-4-4-backend
   policyTypes:
   - Ingress

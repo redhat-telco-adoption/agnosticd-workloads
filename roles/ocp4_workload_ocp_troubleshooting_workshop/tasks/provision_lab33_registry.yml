@@ -90,7 +90,7 @@
         - name: latest
           from:
             kind: DockerImage
-            name: registry.access.redhat.com/ubi9/nginx-124:latest
+            name: quay.io/redhat-telco-adoption/nginx-unprivileged:latest
           importPolicy:
             scheduled: false
           referencePolicy:

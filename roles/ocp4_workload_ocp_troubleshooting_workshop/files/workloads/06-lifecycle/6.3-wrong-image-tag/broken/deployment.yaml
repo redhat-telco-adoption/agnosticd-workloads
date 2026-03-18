@@ -6,6 +6,7 @@ metadata:
     app: lab-6-3-app
     demo.redhat.com/name: ocp-troubleshooting-workshop
 spec:
+  revisionHistoryLimit: 0
   replicas: 1
   selector:
     matchLabels:
@@ -17,6 +18,6 @@ spec:
     spec:
       containers:
       - name: web
-        image: registry.access.redhat.com/ubi8/httpd-24:v99.99
+        image: quay.io/redhat-telco-adoption/nginx-unprivileged:v99.99
         ports:
         - containerPort: 8080

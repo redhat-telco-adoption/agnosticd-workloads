@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: lab-4-1-svc
+  name: lab-4-1-service
   labels:
     app: lab-4-1-app
     demo.redhat.com/name: ocp-troubleshooting-workshop

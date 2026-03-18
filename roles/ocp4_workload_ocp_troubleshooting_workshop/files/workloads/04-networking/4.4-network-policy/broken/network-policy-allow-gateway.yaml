@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: lab-4-4-allow-from-gateway
+  name: lab-4-4-backend-ingress
   labels:
     demo.redhat.com/name: ocp-troubleshooting-workshop
 spec:

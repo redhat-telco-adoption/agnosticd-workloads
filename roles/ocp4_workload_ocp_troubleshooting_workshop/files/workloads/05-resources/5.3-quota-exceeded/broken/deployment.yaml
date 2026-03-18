@@ -6,6 +6,7 @@ metadata:
     app: lab-5-3-app
     demo.redhat.com/name: ocp-troubleshooting-workshop
 spec:
+  revisionHistoryLimit: 0
   replicas: 3    # TOO MANY: quota only allows 2 pods
   selector:
     matchLabels:

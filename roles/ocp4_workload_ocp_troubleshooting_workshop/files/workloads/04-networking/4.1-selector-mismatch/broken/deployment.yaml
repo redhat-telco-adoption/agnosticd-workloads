@@ -6,6 +6,7 @@ metadata:
     app: lab-4-1-app
     demo.redhat.com/name: ocp-troubleshooting-workshop
 spec:
+  revisionHistoryLimit: 0
   replicas: 1
   selector:
     matchLabels:

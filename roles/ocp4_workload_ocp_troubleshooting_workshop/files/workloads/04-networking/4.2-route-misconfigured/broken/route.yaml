@@ -8,7 +8,7 @@ metadata:
 spec:
   to:
     kind: Service
-    name: lab-4-2-svc
+    name: lab-4-2-service
   port:
     targetPort: 8443    # BUG: should be 8080
   tls:
