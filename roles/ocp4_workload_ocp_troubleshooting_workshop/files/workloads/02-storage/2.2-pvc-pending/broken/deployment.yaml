@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: registry.access.redhat.com/ubi9/nginx-124:latest
+        image: quay.io/redhat-telco-adoption/nginx-unprivileged:latest
         ports:
         - containerPort: 8080
         command: ["/bin/sh", "-c"]
@@ -28,9 +28,9 @@ spec:
           echo "<!DOCTYPE html><html><body><h1>Timestamp Logger</h1><pre>$(cat /data/timestamps.log)</pre></body></html>" > /usr/share/nginx/html/index.html
           nginx -g "daemon off;"
         volumeMounts:
-        - name: data-volume
+        - name: data-volume-2-2
           mountPath: /data
       volumes:
-      - name: data-volume
+      - name: data-volume-2-2
         persistentVolumeClaim:
-          claimName: data-volume
+          claimName: data-volume-2-2
