@@ -74,7 +74,7 @@
           demo.redhat.com/name: ocp-troubleshooting-workshop
       type: kubernetes.io/service-account-token
 
-- name: Import ubi9/nginx-124 as private-app ImageStream
+- name: Create private-app ImageStream object
   kubernetes.core.k8s:
     state: present
     definition:
@@ -85,16 +85,15 @@
         namespace: openshift-workshop-images
         labels:
           demo.redhat.com/name: ocp-troubleshooting-workshop
-      spec:
-        tags:
-        - name: latest
-          from:
-            kind: DockerImage
-            name: quay.io/redhat-telco-adoption/nginx-unprivileged:latest
-          importPolicy:
-            scheduled: false
-          referencePolicy:
-            type: Local
+
+- name: Force-update private-app ImageStream tag to nginx-unprivileged
+  # Use 'oc tag' to explicitly overwrite any pre-existing tag (state: present
+  # does NOT update an existing ImageStream tag that already points elsewhere).
+  ansible.builtin.command: >
+    oc tag quay.io/redhat-telco-adoption/nginx-unprivileged:latest
+    openshift-workshop-images/private-app:latest
+    --reference-policy=local
+  changed_when: true
 
 - name: Wait for image-puller-token to be populated
   kubernetes.core.k8s_info:
