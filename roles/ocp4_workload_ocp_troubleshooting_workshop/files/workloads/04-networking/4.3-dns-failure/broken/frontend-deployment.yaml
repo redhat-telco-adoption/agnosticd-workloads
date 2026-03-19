@@ -16,11 +16,17 @@ spec:
       labels:
         app: lab-4-3-frontend
     spec:
+      volumes:
+      - name: html-content
+        emptyDir: {}
       containers:
       - name: frontend
         image: quay.io/redhat-telco-adoption/nginx-unprivileged:latest
         ports:
         - containerPort: 8080
+        volumeMounts:
+        - name: html-content
+          mountPath: /usr/share/nginx/html
         command: ["/bin/sh", "-c"]
         args:
         - |
