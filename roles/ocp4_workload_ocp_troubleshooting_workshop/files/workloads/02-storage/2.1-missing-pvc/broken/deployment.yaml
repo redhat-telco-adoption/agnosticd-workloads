@@ -29,10 +29,10 @@ spec:
           echo "<!DOCTYPE html><html><body><h1>Timestamp Logger</h1><pre>$(cat /data/timestamps.log)</pre></body></html>" > /usr/share/nginx/html/index.html
           nginx -g "daemon off;"
         volumeMounts:
-        - name: data-volume-2-1
+        - name: data-volume
           mountPath: /data
       volumes:
-      - name: data-volume-2-1
+      - name: data-volume
         persistentVolumeClaim:
-          claimName: data-volume-2-1
-      # Note: The PVC "data-volume-2-1" is intentionally not created
+          claimName: data-volume
+      # Note: The PVC "data-volume" is intentionally not created
