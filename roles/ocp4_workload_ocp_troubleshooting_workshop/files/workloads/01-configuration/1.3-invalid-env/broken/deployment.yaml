@@ -25,7 +25,7 @@ spec:
         args:
         - |
           if [ -z "${DATABASE_URL:-}" ]; then
-            echo "ERROR: DATABASE_URL is not set" >&2
+            echo "ERROR: DATABASE_URL is not set. Exiting." >&2
             exit 1
           fi
           if [ -z "${APP_NAME:-}" ]; then
