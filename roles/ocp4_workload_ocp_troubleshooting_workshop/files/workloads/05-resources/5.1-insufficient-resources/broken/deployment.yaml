@@ -29,8 +29,8 @@ spec:
           nginx -g "daemon off;"
         resources:
           requests:
-            cpu: "32"
-            memory: "128Gi"
+            cpu: "8"
+            memory: "32Gi"
           limits:
-            cpu: "64"
-            memory: "256Gi"
+            cpu: "8"
+            memory: "32Gi"
