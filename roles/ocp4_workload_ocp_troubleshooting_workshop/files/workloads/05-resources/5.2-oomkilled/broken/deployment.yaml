@@ -24,13 +24,16 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          echo "Allocating 100MB of memory..."
+          echo "Allocating 100MB of memory (kept alive)..."
+          # Allocate 100MB and hold it indefinitely — this persists while nginx runs
           python3 -c "
-          import time
-          data = bytearray(100 * 1024 * 1024)  # 100MB
-          print('Memory allocated, starting web server...')
-          time.sleep(5)
-          " || echo "python3 failed, continuing"
+          import time, signal, sys
+          data = bytearray(100 * 1024 * 1024)  # 100MB held in memory
+          print('Memory allocated, keeping alive...')
+          while True:
+              time.sleep(60)
+          " &
+          sleep 1  # Give python3 time to allocate before nginx starts
           mkdir -p /usr/share/nginx/html
           cat > /usr/share/nginx/html/index.html <<EOF
           <!DOCTYPE html><html><body>
