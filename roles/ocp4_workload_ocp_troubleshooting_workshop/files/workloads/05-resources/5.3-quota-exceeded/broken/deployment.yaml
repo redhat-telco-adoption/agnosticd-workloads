@@ -30,6 +30,6 @@ spec:
           nginx -g "daemon off;"
         resources:
           requests:
-            memory: "256Mi"   # 3 x 256Mi = 768Mi > quota of 512Mi
+            memory: "256Mi"
           limits:
             memory: "256Mi"
