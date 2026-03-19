@@ -16,7 +16,9 @@ spec:
       labels:
         app: lab-2-3-app
     spec:
-      # securityContext with fsGroup intentionally OMITTED
+      # securityContext.fsGroup intentionally OMITTED — students add it as the fix
+      securityContext:
+        runAsUser: 1001  # Non-root UID to guarantee write failure regardless of storage provisioner
       containers:
       - name: web
         image: quay.io/redhat-telco-adoption/nginx-unprivileged:latest
@@ -25,12 +27,14 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
+          echo "Starting application..."
+          echo "Writing data to /data/output.log"
+          echo "$(date -Iseconds): test write" >> /data/output.log || {
+            echo "/docker-entrypoint.sh: Permission denied: /data/output.log" >&2
+            exit 1
+          }
           mkdir -p /usr/share/nginx/html
-          if echo "$(date -Iseconds): test write" >> /data/test.log 2>/tmp/err.log; then
-            echo "<!DOCTYPE html><html><body><h1>Data Written Successfully</h1><pre>$(cat /data/test.log)</pre></body></html>" > /usr/share/nginx/html/index.html
-          else
-            echo "<!DOCTYPE html><html><body><h1>Error</h1><p>Permission denied writing to /data</p><pre>$(cat /tmp/err.log)</pre></body></html>" > /usr/share/nginx/html/index.html
-          fi
+          echo "<!DOCTYPE html><html><body><h1>Data Written Successfully</h1><pre>$(cat /data/output.log)</pre></body></html>" > /usr/share/nginx/html/index.html
           nginx -g "daemon off;"
         volumeMounts:
         - name: data
