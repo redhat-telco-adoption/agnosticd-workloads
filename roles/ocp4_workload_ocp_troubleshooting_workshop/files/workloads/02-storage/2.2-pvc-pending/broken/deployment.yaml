@@ -29,9 +29,9 @@ spec:
           echo "<!DOCTYPE html><html><body><h1>Timestamp Logger</h1><pre>$(cat /data/timestamps.log)</pre></body></html>" > /usr/share/nginx/html/index.html
           nginx -g "daemon off;"
         volumeMounts:
-        - name: data-volume-2-2
+        - name: lab-2-2-data
           mountPath: /data
       volumes:
-      - name: data-volume-2-2
+      - name: lab-2-2-data
         persistentVolumeClaim:
-          claimName: data-volume-2-2
+          claimName: lab-2-2-data
