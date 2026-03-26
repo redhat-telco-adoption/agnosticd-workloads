@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: ocp4_workload_open5gs
+  author: Red Hat Telco Adoption
+  description: |
+    AgnosticDv2 workload that deploys a fully simulated 5G SA network
+    (Open5GS + UERANSIM) on OpenShift via GitOps (ArgoCD App-of-Apps).
+    Installs OpenShift Logging + Loki operators as prerequisites, then
+    bootstraps the 5g-demo ArgoCD AppProject and root Application.
+    Requires OpenShift GitOps to be installed before this workload runs.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.9"
+  platforms: []
+  galaxy_tags:
+    - ocp
+    - openshift
+    - 5g
+    - gitops
+    - argocd
+dependencies: []

@@ -1,0 +1,42 @@
+---
+# Patch the ArgoCD CR to add custom resource health checks.
+# The OpenShift GitOps operator owns argocd-cm and reconciles it from
+# this CR — do NOT patch argocd-cm directly.
+#
+# Two checks are required:
+#   MachineConfigPool — wave -5 must wait for the rolling node reboot to finish.
+#   HorizontalPodAutoscaler — Gradiant chart v0.2.6 creates an HPA with a wrong
+#     scaleTargetRef.kind (StatefulSet vs Deployment), causing ArgoCD to mark
+#     the UERANSIM app Degraded and stall wave 8 indefinitely.
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: "{{ ocp4_workload_open5gs_argocd_name }}"
+  namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+spec:
+  resourceHealthChecks:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      check: |
+        hs = {}
+        hs.status = "Healthy"
+        hs.message = "HPA health check skipped (demo)"
+        return hs
+    - group: machineconfiguration.openshift.io
+      kind: MachineConfigPool
+      check: |
+        hs = {}
+        if obj.status ~= nil then
+          for _, c in ipairs(obj.status.conditions or {}) do
+            if c.type == "Updated" and c.status == "True" then
+              hs.status = "Healthy"; hs.message = "Workers updated"; return hs
+            end
+            if c.type == "Degraded" and c.status == "True" then
+              hs.status = "Degraded"; hs.message = c.message; return hs
+            end
+          end
+          hs.status = "Progressing"; hs.message = "MachineConfigPool updating"
+        else
+          hs.status = "Progressing"; hs.message = "Waiting for status"
+        end
+        return hs

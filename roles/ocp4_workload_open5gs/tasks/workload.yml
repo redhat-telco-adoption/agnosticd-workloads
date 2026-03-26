@@ -1,0 +1,194 @@
+---
+# ============================================================
+# Step 1: Install Loki Operator (prerequisite for OpenShift Logging 6.x)
+# ============================================================
+# Red Hat and community both publish a package named "loki-operator".
+# Pin install_operator_catalog to redhat-operators to select the correct one.
+- name: Install Loki Operator
+  when: ocp4_workload_open5gs_install_loki | bool
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: install
+    install_operator_name: loki-operator
+    install_operator_namespace: openshift-operators-redhat
+    install_operator_channel: "{{ ocp4_workload_open5gs_loki_channel }}"
+    install_operator_catalog: redhat-operators
+    install_operator_automatic_install_plan_approval: true
+    install_operator_starting_csv: ""
+    install_operator_manage_namespaces: []  # AllNamespaces OperatorGroup (loki-operator requirement)
+
+# ============================================================
+# Step 2: Install OpenShift Logging (cluster-logging) Operator
+# ============================================================
+- name: Install OpenShift Logging Operator
+  when: ocp4_workload_open5gs_install_logging | bool
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: install
+    install_operator_name: cluster-logging
+    install_operator_namespace: openshift-logging
+    install_operator_channel: "{{ ocp4_workload_open5gs_logging_channel }}"
+    install_operator_catalog: redhat-operators
+    install_operator_automatic_install_plan_approval: true
+    install_operator_starting_csv: ""
+    install_operator_manage_namespaces:
+      - openshift-logging  # OwnNamespace OperatorGroup
+
+# ============================================================
+# Step 3: Patch ArgoCD CR with custom resource health checks
+# ============================================================
+# Must be done BEFORE creating the App-of-Apps so that wave -5
+# (MachineConfigPool) and wave 8 (HPA) health checks are active
+# when those Applications first sync.
+- name: Patch ArgoCD CR with custom resource health checks
+  kubernetes.core.k8s:
+    state: patched
+    template: argocd-health-patch.yaml.j2
+
+# Wait for the OpenShift GitOps operator to reconcile the ArgoCD CR
+# changes into argocd-cm (~15 seconds).
+- name: Wait for ArgoCD operator to reconcile health checks into argocd-cm
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: argocd-cm
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+  register: r_argocd_cm
+  retries: 12
+  delay: 10
+  until:
+    - r_argocd_cm.resources | length > 0
+    - >-
+      'resource.customizations.health.machineconfiguration.openshift.io_MachineConfigPool'
+      in (r_argocd_cm.resources[0].data | default({}))
+
+# ============================================================
+# Step 4: Apply AppProject and App-of-Apps
+# ============================================================
+- name: Create 5g-demo AppProject
+  kubernetes.core.k8s:
+    state: present
+    template: appproject-5g-demo.yaml.j2
+
+- name: Create 5g-demo App-of-Apps root Application
+  kubernetes.core.k8s:
+    state: present
+    template: app-of-apps.yaml.j2
+
+# ============================================================
+# Step 5: Wait for 5g-cluster-prep Application to appear
+# ============================================================
+# The root App-of-Apps controller discovers and creates child Applications
+# from gitops/applications/. Wait until 5g-cluster-prep exists before
+# triggering its sync.
+- name: Wait for 5g-cluster-prep Application to be created by ArgoCD
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: 5g-cluster-prep
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+  register: r_cluster_prep_app
+  retries: 20
+  delay: 15
+  until: r_cluster_prep_app.resources | length > 0
+
+# ============================================================
+# Step 6: Trigger 5g-cluster-prep sync via ArgoCD API
+# ============================================================
+# 5g-cluster-prep has no syncPolicy.automated (intentional safety gate for
+# the SCTP MachineConfig that causes rolling node reboots). Trigger the sync
+# programmatically by setting the Application's operation.sync field —
+# equivalent to running: argocd app sync 5g-cluster-prep
+- name: Trigger 5g-cluster-prep sync (SCTP MachineConfig deployment)
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: 5g-cluster-prep
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: patched
+    definition:
+      operation:
+        initiatedBy:
+          username: agnosticd
+        sync:
+          revision: "{{ ocp4_workload_open5gs_git_branch }}"
+          syncStrategy:
+            hook: {}
+
+# ============================================================
+# Step 7: Wait for MachineConfigPool worker to finish rolling reboot
+# ============================================================
+# The SCTP MachineConfig triggers a rolling reboot of all worker nodes.
+# This takes approximately 10-15 minutes on a standard cluster.
+- name: Wait for MachineConfigPool worker to complete rolling reboot
+  kubernetes.core.k8s_info:
+    api_version: machineconfiguration.openshift.io/v1
+    kind: MachineConfigPool
+    name: worker
+  register: r_mcp
+  retries: "{{ ocp4_workload_open5gs_mcp_wait_retries }}"
+  delay: "{{ ocp4_workload_open5gs_mcp_wait_delay }}"
+  until:
+    - r_mcp.resources | length > 0
+    - >-
+      r_mcp.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'Updated')
+      | selectattr('status', 'equalto', 'True')
+      | list | length > 0
+    - >-
+      r_mcp.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'Updating')
+      | selectattr('status', 'equalto', 'False')
+      | list | length > 0
+    - >-
+      r_mcp.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'Degraded')
+      | selectattr('status', 'equalto', 'False')
+      | list | length > 0
+
+# ============================================================
+# Step 8: Wait for all 5G child Applications to be Healthy+Synced
+# ============================================================
+# All 7 child apps carry label app.kubernetes.io/part-of=5g-demo.
+# Wave ordering ensures dependencies are respected:
+#   -5: cluster-prep → 2: uwm → 5: open5gs → 6: webui-route
+#   → 7: subscribers (Job gate) → 8: ueransim → 10: observability
+- name: Wait for all 5G demo Applications to be Healthy and Synced
+  when: ocp4_workload_open5gs_wait_for_healthy | bool
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/part-of=5g-demo"
+  register: _all_apps
+  retries: "{{ ocp4_workload_open5gs_app_wait_retries }}"
+  delay: "{{ ocp4_workload_open5gs_app_wait_delay }}"
+  until:
+    - _all_apps.resources | length > 0
+    - >-
+      _all_apps.resources
+      | json_query('length([?status.health.status==`Healthy`]) == length(@)')
+    - >-
+      _all_apps.resources
+      | json_query('length([?status.sync.status==`Synced`]) == length(@)')
+
+# ============================================================
+# Step 9: Report user-facing information
+# ============================================================
+- name: Set Open5GS WebUI URL fact
+  ansible.builtin.set_fact:
+    _ocp4_workload_open5gs_webui_url: >-
+      https://open5gs-webui-open5gs.{{ openshift_cluster_ingress_domain }}
+
+- name: Report 5G demo access information
+  agnosticd.core.agnosticd_user_info:
+    msg: |
+      Open5GS WebUI: {{ _ocp4_workload_open5gs_webui_url }}
+      Credentials:   admin / 1423
+    data:
+      open5gs_webui_url: "{{ _ocp4_workload_open5gs_webui_url }}"
+      open5gs_webui_user: admin
+      open5gs_webui_password: "1423"

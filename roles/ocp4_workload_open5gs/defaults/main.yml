@@ -1,0 +1,42 @@
+---
+# ============================================================
+# Git source configuration
+# ============================================================
+# URL of the git repository containing the 5G demo GitOps resources.
+# The App-of-Apps will point ArgoCD at this repo.
+ocp4_workload_open5gs_git_repo: "https://github.com/redhat-telco-adoption/openshift-5g"
+ocp4_workload_open5gs_git_branch: "main"
+
+# ============================================================
+# ArgoCD / OpenShift GitOps target
+# ============================================================
+# Name and namespace of the ArgoCD CR (installed by ocp4_workload_openshift_gitops).
+ocp4_workload_open5gs_argocd_name: "openshift-gitops"
+ocp4_workload_open5gs_argocd_namespace: "openshift-gitops"
+
+# ============================================================
+# Operator installation
+# ============================================================
+# Install Red Hat Loki Operator (required for OpenShift Logging 6.x log storage).
+# Uses redhat-operators catalog — there are two packages named loki-operator,
+# the catalog pin selects the Red Hat one.
+ocp4_workload_open5gs_install_loki: true
+ocp4_workload_open5gs_loki_channel: "stable-6.3"
+
+# Install OpenShift Logging (cluster-logging) operator.
+ocp4_workload_open5gs_install_logging: true
+ocp4_workload_open5gs_logging_channel: "stable-6.3"
+
+# ============================================================
+# Wait behavior
+# ============================================================
+# Whether to wait for all ArgoCD Applications to reach Healthy+Synced.
+ocp4_workload_open5gs_wait_for_healthy: true
+
+# MachineConfigPool wait: SCTP MachineConfig triggers a rolling node reboot (~15 min).
+ocp4_workload_open5gs_mcp_wait_retries: 40  # 40 × 30s = up to 20 min
+ocp4_workload_open5gs_mcp_wait_delay: 30
+
+# Application health wait: time for all 7 child apps to deploy and stabilise.
+ocp4_workload_open5gs_app_wait_retries: 60  # 60 × 30s = up to 30 min
+ocp4_workload_open5gs_app_wait_delay: 30

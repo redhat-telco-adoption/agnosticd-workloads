@@ -1,0 +1,42 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: 5g-demo
+  namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+  labels:
+    app.kubernetes.io/part-of: 5g-demo
+spec:
+  description: "5G SA Core demo — Open5GS + UERANSIM on OpenShift"
+
+  sourceRepos:
+    - "{{ ocp4_workload_open5gs_git_repo }}"
+    - "registry-1.docker.io/gradiantcharts"
+
+  destinations:
+    - namespace: open5gs
+      server: https://kubernetes.default.svc
+    - namespace: ueransim
+      server: https://kubernetes.default.svc
+    - namespace: openshift-monitoring
+      server: https://kubernetes.default.svc
+    - namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+      server: https://kubernetes.default.svc
+
+  # Cluster-scoped resources this project is allowed to manage
+  clusterResourceWhitelist:
+    - group: machineconfiguration.openshift.io
+      kind: MachineConfig
+    - group: security.openshift.io
+      kind: SecurityContextConstraints
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: ""
+      kind: Namespace
+
+  # Namespace-scoped resources — allow everything
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

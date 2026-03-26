@@ -1,0 +1,124 @@
+---
+# ============================================================
+# Teardown: remove 5G demo ArgoCD Applications and operators
+# ============================================================
+# Applications are deleted in reverse wave order. Adding the ArgoCD cascade
+# finalizer before deletion ensures managed resources are pruned from the
+# cluster (not just orphaned).
+#
+# IMPORTANT: 5g-cluster-prep is deleted last because its SCTP MachineConfig
+# removal triggers another rolling node reboot (~15 min).
+
+- name: Add cascade finalizer and delete child Applications (reverse wave order)
+  loop:
+    - 5g-observability       # wave 10
+    - 5g-ueransim            # wave 8
+    - 5g-subscribers         # wave 7
+    - 5g-webui-route         # wave 6
+    - 5g-open5gs             # wave 5
+    - 5g-user-workload-monitoring  # wave 2
+  loop_control:
+    loop_var: _app_name
+  block:
+    - name: Add cascade finalizer to {{ _app_name }}
+      kubernetes.core.k8s:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ _app_name }}"
+        namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+        state: patched
+        definition:
+          metadata:
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+      ignore_errors: true
+
+    - name: Delete Application {{ _app_name }}
+      kubernetes.core.k8s:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ _app_name }}"
+        namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+        state: absent
+      ignore_errors: true
+
+# Delete cluster-prep last (SCTP MachineConfig removal → rolling reboot)
+- name: Add cascade finalizer to 5g-cluster-prep
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: 5g-cluster-prep
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: patched
+    definition:
+      metadata:
+        finalizers:
+          - resources-finalizer.argocd.argoproj.io
+  ignore_errors: true
+
+- name: Delete Application 5g-cluster-prep
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: 5g-cluster-prep
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: absent
+  ignore_errors: true
+
+# Delete root App-of-Apps
+- name: Delete root 5g-demo Application
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: 5g-demo
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: absent
+  ignore_errors: true
+
+# Delete AppProject
+- name: Delete 5g-demo AppProject
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1alpha1
+    kind: AppProject
+    name: 5g-demo
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: absent
+  ignore_errors: true
+
+# Remove ArgoCD health check customizations from the ArgoCD CR
+- name: Remove custom resource health checks from ArgoCD CR
+  kubernetes.core.k8s:
+    api_version: argoproj.io/v1beta1
+    kind: ArgoCD
+    name: "{{ ocp4_workload_open5gs_argocd_name }}"
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: patched
+    definition:
+      spec:
+        resourceHealthChecks: []
+  ignore_errors: true
+
+# ============================================================
+# Remove operators
+# ============================================================
+- name: Remove OpenShift Logging Operator
+  when: ocp4_workload_open5gs_install_logging | bool
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: remove
+    install_operator_name: cluster-logging
+    install_operator_namespace: openshift-logging
+    install_operator_channel: "{{ ocp4_workload_open5gs_logging_channel }}"
+    install_operator_catalog: redhat-operators
+
+- name: Remove Loki Operator
+  when: ocp4_workload_open5gs_install_loki | bool
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: remove
+    install_operator_name: loki-operator
+    install_operator_namespace: openshift-operators-redhat
+    install_operator_channel: "{{ ocp4_workload_open5gs_loki_channel }}"
+    install_operator_catalog: redhat-operators

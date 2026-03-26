@@ -1,0 +1,29 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: 5g-demo
+  namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+  labels:
+    app.kubernetes.io/part-of: 5g-demo
+spec:
+  project: 5g-demo
+
+  source:
+    repoURL: "{{ ocp4_workload_open5gs_git_repo }}"
+    targetRevision: "{{ ocp4_workload_open5gs_git_branch }}"
+    path: gitops/applications
+    directory:
+      recurse: false
+      include: "app-*.yaml"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+
+  syncPolicy:
+    automated:
+      prune: false      # Never auto-prune child Applications
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
