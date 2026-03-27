@@ -2,17 +2,17 @@
 - name: Apply MCP server ServiceAccount and RBAC
   kubernetes.core.k8s:
     state: present
-    src: "{{ role_path }}/files/mcp_server/service-account.yaml"
+    src: "{{ role_path }}/files/mcp_server/serviceaccount-mcp.yaml"
 
 - name: Deploy MCP server
   kubernetes.core.k8s:
     state: present
-    src: "{{ role_path }}/files/mcp_server/deployment.yaml"
+    src: "{{ role_path }}/files/mcp_server/deployment-mcp.yaml"
 
 - name: Create MCP server service
   kubernetes.core.k8s:
     state: present
-    src: "{{ role_path }}/files/mcp_server/service.yaml"
+    src: "{{ role_path }}/files/mcp_server/service-mcp.yaml"
 
 - name: Wait for MCP server deployment to be ready
   kubernetes.core.k8s_info:
