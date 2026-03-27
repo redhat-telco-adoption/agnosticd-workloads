@@ -33,11 +33,6 @@
       selectattr('type', 'equalto', 'Ready') |
       selectattr('status', 'equalto', 'True') | list | length == 1
 
-- name: Create ClusterLogging instance
-  kubernetes.core.k8s:
-    state: present
-    src: "{{ role_path }}/files/loki/clusterlogging.yaml"
-
 - name: Create ClusterLogForwarder
   kubernetes.core.k8s:
     state: present
