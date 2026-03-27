@@ -61,6 +61,7 @@
     install_operator_catalog: redhat-operators
     install_operator_automatic_install_plan_approval: true
     install_operator_starting_csv: ""
+    install_operator_csv_nameprefix: opentelemetry-operator
 
 - name: Wait for OpenTelemetryCollector CRD to be available
   kubernetes.core.k8s_info:
@@ -83,6 +84,7 @@
     install_operator_catalog: redhat-operators
     install_operator_automatic_install_plan_approval: true
     install_operator_starting_csv: ""
+    install_operator_csv_nameprefix: network-observability-operator
 
 - name: Wait for FlowCollector CRD to be available
   kubernetes.core.k8s_info:
