@@ -9,7 +9,7 @@
     kind: Pod
     namespace: openshift-monitoring
     label_selectors:
-    - app=alertmanager
+    - app.kubernetes.io/name=alertmanager
     - alertmanager=main
   register: r_am_pods
 

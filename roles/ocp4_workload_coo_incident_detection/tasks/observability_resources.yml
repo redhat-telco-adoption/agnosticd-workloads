@@ -17,6 +17,7 @@
   - prometheusrule-acme-5gc-edge.yaml
 
 - name: Apply acme-5gc-edge AlertmanagerConfig and Slack webhook secret
+  when: ocp4_workload_coo_incident_detection_slack_webhook_url | length > 0
   kubernetes.core.k8s:
     state: present
     template: observability/alertmanagerconfig-acme-5gc-edge.yaml.j2
