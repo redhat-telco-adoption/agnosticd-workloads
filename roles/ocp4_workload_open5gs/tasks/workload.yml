@@ -37,7 +37,28 @@
       - openshift-logging  # OwnNamespace OperatorGroup
 
 # ============================================================
-# Step 3: Patch ArgoCD CR with custom resource health checks
+# Step 3: Install Cluster Observability Operator (COO)
+# ============================================================
+# COO provides MonitoringStack, UIPlugin, and ThanosQuerier CRDs consumed by
+# the 5g-observability ArgoCD Application. Must be installed before App-of-Apps
+# syncs so the CRDs are present when ArgoCD applies observability manifests.
+# AllNamespaces mode — uses openshift-operators namespace (no OperatorGroup needed).
+- name: Install Cluster Observability Operator
+  when: ocp4_workload_open5gs_install_observability | bool
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: install
+    install_operator_name: cluster-observability-operator
+    install_operator_namespace: openshift-operators
+    install_operator_channel: "{{ ocp4_workload_open5gs_observability_channel }}"
+    install_operator_catalog: redhat-operators
+    install_operator_automatic_install_plan_approval: true
+    install_operator_starting_csv: ""
+    install_operator_manage_namespaces: []  # AllNamespaces OperatorGroup
+
+# ============================================================
+# Step 4: Patch ArgoCD CR with custom resource health checks
 # ============================================================
 # Must be done BEFORE creating the App-of-Apps so that wave -5
 # (MachineConfigPool) and wave 8 (HPA) health checks are active
@@ -65,7 +86,7 @@
       in (r_argocd_cm.resources[0].data | default({}))
 
 # ============================================================
-# Step 4: Ensure cluster-admins group exists and contains the admin user
+# Step 5: Ensure cluster-admins group exists and contains the admin user
 # ============================================================
 # ArgoCD RBAC maps the cluster-admins OpenShift Group to role:admin.
 # On clusters where oc adm groups is not available, the Group must be
@@ -82,7 +103,7 @@
         - "{{ ocp4_workload_open5gs_argocd_admin_user }}"
 
 # ============================================================
-# Step 5: Create ArgoCD git repository credential secret
+# Step 6: Create ArgoCD git repository credential secret
 # ============================================================
 - name: Create ArgoCD git repository secret for private repo
   kubernetes.core.k8s:
@@ -90,7 +111,7 @@
     template: secret-git-repo.yaml.j2
 
 # ============================================================
-# Step 6: Apply AppProject and App-of-Apps
+# Step 7: Apply AppProject and App-of-Apps
 # ============================================================
 - name: Create 5g-demo AppProject
   kubernetes.core.k8s:
@@ -103,7 +124,7 @@
     template: app-of-apps.yaml.j2
 
 # ============================================================
-# Step 6: Wait for 5g-cluster-prep Application to appear
+# Step 8: Wait for 5g-cluster-prep Application to appear
 # ============================================================
 # The root App-of-Apps controller discovers and creates child Applications
 # from gitops/applications/. Wait until 5g-cluster-prep exists before
@@ -120,7 +141,7 @@
   until: r_cluster_prep_app.resources | length > 0
 
 # ============================================================
-# Step 7: Trigger 5g-cluster-prep sync via ArgoCD API
+# Step 9: Trigger 5g-cluster-prep sync via ArgoCD API
 # ============================================================
 # 5g-cluster-prep has no syncPolicy.automated (intentional safety gate for
 # the SCTP MachineConfig that causes rolling node reboots). Trigger the sync
@@ -143,7 +164,7 @@
             hook: {}
 
 # ============================================================
-# Step 8: Wait for MachineConfigPool worker to finish rolling reboot
+# Step 10: Wait for MachineConfigPool worker to finish rolling reboot
 # ============================================================
 # The SCTP MachineConfig triggers a rolling reboot of all worker nodes.
 # This takes approximately 10-15 minutes on a standard cluster.
@@ -174,7 +195,7 @@
       | list | length > 0
 
 # ============================================================
-# Step 9: Wait for all 5G child Applications to be Healthy+Synced
+# Step 11: Wait for all 5G child Applications to be Healthy+Synced
 # ============================================================
 # All 7 child apps carry label app.kubernetes.io/part-of=5g-demo.
 # Wave ordering ensures dependencies are respected:
@@ -201,7 +222,7 @@
       | json_query('length([?status.sync.status==`Synced`]) == length(@)')
 
 # ============================================================
-# Step 10: Report user-facing information
+# Step 12: Report user-facing information
 # ============================================================
 - name: Set Open5GS WebUI URL fact
   ansible.builtin.set_fact:

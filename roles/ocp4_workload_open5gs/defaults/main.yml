@@ -37,6 +37,12 @@ ocp4_workload_open5gs_loki_channel: "stable-6.3"
 ocp4_workload_open5gs_install_logging: true
 ocp4_workload_open5gs_logging_channel: "stable-6.3"
 
+# Install Cluster Observability Operator (COO).
+# Provides MonitoringStack / UIPlugin / ThanosQuerier CRDs used by 5g-observability.
+# redhat-operators, AllNamespaces, channel: stable (v1.4.0 as of 2026-03)
+ocp4_workload_open5gs_install_observability: true
+ocp4_workload_open5gs_observability_channel: "stable"
+
 # ============================================================
 # Wait behavior
 # ============================================================
