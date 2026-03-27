@@ -1,17 +1,19 @@
 ---
 # Silence noisy platform alerts for the duration of the demo.
 # These alerts fire by default on fresh clusters and would distract from the demo narrative.
-# Mirrors the silence_platform_alerts() function in scripts/deploy.sh.
 
-- name: Get alertmanager pod name
+- name: Get Alertmanager route host
   kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Pod
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: alertmanager-main
     namespace: openshift-monitoring
-    label_selectors:
-    - app.kubernetes.io/name=alertmanager
-    - alertmanager=main
-  register: r_am_pods
+  register: r_am_route
+
+- name: Get OpenShift authentication token
+  ansible.builtin.command: oc whoami -t
+  register: r_oc_token
+  changed_when: false
 
 - name: Compute silence end timestamp
   ansible.builtin.set_fact:
@@ -22,28 +24,29 @@
          ) }}
 
 - name: Silence noisy platform alerts in Alertmanager
-  kubernetes.core.k8s_exec:
-    namespace: openshift-monitoring
-    pod: "{{ r_am_pods.resources[0].metadata.name }}"
-    command:
-    - /bin/sh
-    - -c
-    - >-
-      curl -s -o /dev/null -w "%{http_code}" -X POST
-      http://localhost:9093/api/v2/silences
-      -H 'Content-Type: application/json'
-      -d '{
-        "matchers": [{"name": "alertname", "value": "{{ item }}", "isRegex": false}],
-        "startsAt": "{{ now(utc=True).strftime('%Y-%m-%dT%H:%M:%S.000Z') }}",
-        "endsAt": "{{ _ocp4_workload_coo_incident_detection_silence_end }}",
-        "createdBy": "agnosticd",
-        "comment": "Demo environment silence — suppressed during COO incident detection demo"
-      }'
-  register: r_silence
-  changed_when: r_silence.stdout | trim == "200"
+  ansible.builtin.uri:
+    url: >-
+      https://{{ r_am_route.resources[0].spec.host }}{{ r_am_route.resources[0].spec.path }}/v2/silences
+    method: POST
+    headers:
+      Authorization: "Bearer {{ r_oc_token.stdout | trim }}"
+    body_format: json
+    body:
+      matchers:
+        - name: alertname
+          value: "{{ item }}"
+          isRegex: false
+      startsAt: "{{ now(utc=True).strftime('%Y-%m-%dT%H:%M:%S.000Z') }}"
+      endsAt: "{{ _ocp4_workload_coo_incident_detection_silence_end }}"
+      createdBy: agnosticd
+      comment: "Demo environment silence - suppressed during COO incident detection demo"
+    validate_certs: false
+    status_code:
+      - 200
+      - 202
   loop:
-  - ClusterLogForwarderDeprecations
-  - AlertmanagerReceiversNotConfigured
-  - PodDisruptionBudgetAtLimit
-  - HighOverallControlPlaneMemory
-  - Watchdog
+    - ClusterLogForwarderDeprecations
+    - AlertmanagerReceiversNotConfigured
+    - PodDisruptionBudgetAtLimit
+    - HighOverallControlPlaneMemory
+    - Watchdog
