@@ -17,7 +17,7 @@
   ansible.builtin.set_fact:
     _ocp4_workload_coo_incident_detection_silence_end: >-
       {{ '%Y-%m-%dT%H:%M:%S.000Z' | strftime(
-           (ansible_date_time.epoch | int) +
+           now(utc=True).timestamp() | int +
            (ocp4_workload_coo_incident_detection_alert_silence_duration_hours | int * 3600)
          ) }}
 
@@ -34,7 +34,7 @@
       -H 'Content-Type: application/json'
       -d '{
         "matchers": [{"name": "alertname", "value": "{{ item }}", "isRegex": false}],
-        "startsAt": "{{ ansible_date_time.iso8601 }}",
+        "startsAt": "{{ now(utc=True).strftime('%Y-%m-%dT%H:%M:%S.000Z') }}",
         "endsAt": "{{ _ocp4_workload_coo_incident_detection_silence_end }}",
         "createdBy": "agnosticd",
         "comment": "Demo environment silence — suppressed during COO incident detection demo"
