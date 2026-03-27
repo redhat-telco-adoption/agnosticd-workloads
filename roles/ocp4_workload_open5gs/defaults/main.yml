@@ -13,6 +13,16 @@ ocp4_workload_open5gs_git_branch: "main"
 # Name and namespace of the ArgoCD CR (installed by ocp4_workload_openshift_gitops).
 ocp4_workload_open5gs_argocd_name: "openshift-gitops"
 ocp4_workload_open5gs_argocd_namespace: "openshift-gitops"
+# OpenShift user added to cluster-admins Group for ArgoCD UI access.
+# ArgoCD RBAC maps cluster-admins → role:admin.
+ocp4_workload_open5gs_argocd_admin_user: "admin"
+
+# ============================================================
+# Git repository credentials
+# ============================================================
+# HTTPS credentials for the private git repo. Must be overridden at runtime.
+ocp4_workload_open5gs_git_username: ""
+ocp4_workload_open5gs_git_token: ""
 
 # ============================================================
 # Operator installation

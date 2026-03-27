@@ -9,7 +9,7 @@
 # IMPORTANT: 5g-cluster-prep is deleted last because its SCTP MachineConfig
 # removal triggers another rolling node reboot (~15 min).
 
-- name: Add cascade finalizer to child Application {{ item }}
+- name: Add cascade finalizer and delete child Applications (reverse wave order)
   loop:
     - 5g-observability       # wave 10
     - 5g-ueransim            # wave 8
@@ -17,33 +17,30 @@
     - 5g-webui-route         # wave 6
     - 5g-open5gs             # wave 5
     - 5g-user-workload-monitoring  # wave 2
-  kubernetes.core.k8s:
-    api_version: argoproj.io/v1alpha1
-    kind: Application
-    name: "{{ item }}"
-    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
-    state: patched
-    definition:
-      metadata:
-        finalizers:
-          - resources-finalizer.argocd.argoproj.io
-  ignore_errors: true
+  loop_control:
+    loop_var: _app_name
+  block:
+    - name: Add cascade finalizer to {{ _app_name }}
+      kubernetes.core.k8s:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ _app_name }}"
+        namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+        state: patched
+        definition:
+          metadata:
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+      ignore_errors: true
 
-- name: Delete child Application {{ item }} (reverse wave order)
-  loop:
-    - 5g-observability       # wave 10
-    - 5g-ueransim            # wave 8
-    - 5g-subscribers         # wave 7
-    - 5g-webui-route         # wave 6
-    - 5g-open5gs             # wave 5
-    - 5g-user-workload-monitoring  # wave 2
-  kubernetes.core.k8s:
-    api_version: argoproj.io/v1alpha1
-    kind: Application
-    name: "{{ item }}"
-    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
-    state: absent
-  ignore_errors: true
+    - name: Delete Application {{ _app_name }}
+      kubernetes.core.k8s:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: "{{ _app_name }}"
+        namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+        state: absent
+      ignore_errors: true
 
 # Delete cluster-prep last (SCTP MachineConfig removal → rolling reboot)
 - name: Add cascade finalizer to 5g-cluster-prep
@@ -84,6 +81,16 @@
     api_version: argoproj.io/v1alpha1
     kind: AppProject
     name: 5g-demo
+    namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
+    state: absent
+  ignore_errors: true
+
+# Remove git repository credential secret
+- name: Delete ArgoCD git repository secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    name: repo-openshift-5g
     namespace: "{{ ocp4_workload_open5gs_argocd_namespace }}"
     state: absent
   ignore_errors: true

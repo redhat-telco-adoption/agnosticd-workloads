@@ -65,7 +65,32 @@
       in (r_argocd_cm.resources[0].data | default({}))
 
 # ============================================================
-# Step 4: Apply AppProject and App-of-Apps
+# Step 4: Ensure cluster-admins group exists and contains the admin user
+# ============================================================
+# ArgoCD RBAC maps the cluster-admins OpenShift Group to role:admin.
+# On clusters where oc adm groups is not available, the Group must be
+# created directly via the user.openshift.io/v1 API.
+- name: Ensure cluster-admins Group exists with admin user
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: user.openshift.io/v1
+      kind: Group
+      metadata:
+        name: cluster-admins
+      users:
+        - "{{ ocp4_workload_open5gs_argocd_admin_user }}"
+
+# ============================================================
+# Step 5: Create ArgoCD git repository credential secret
+# ============================================================
+- name: Create ArgoCD git repository secret for private repo
+  kubernetes.core.k8s:
+    state: present
+    template: secret-git-repo.yaml.j2
+
+# ============================================================
+# Step 6: Apply AppProject and App-of-Apps
 # ============================================================
 - name: Create 5g-demo AppProject
   kubernetes.core.k8s:
@@ -78,7 +103,7 @@
     template: app-of-apps.yaml.j2
 
 # ============================================================
-# Step 5: Wait for 5g-cluster-prep Application to appear
+# Step 6: Wait for 5g-cluster-prep Application to appear
 # ============================================================
 # The root App-of-Apps controller discovers and creates child Applications
 # from gitops/applications/. Wait until 5g-cluster-prep exists before
@@ -95,7 +120,7 @@
   until: r_cluster_prep_app.resources | length > 0
 
 # ============================================================
-# Step 6: Trigger 5g-cluster-prep sync via ArgoCD API
+# Step 7: Trigger 5g-cluster-prep sync via ArgoCD API
 # ============================================================
 # 5g-cluster-prep has no syncPolicy.automated (intentional safety gate for
 # the SCTP MachineConfig that causes rolling node reboots). Trigger the sync
@@ -118,7 +143,7 @@
             hook: {}
 
 # ============================================================
-# Step 7: Wait for MachineConfigPool worker to finish rolling reboot
+# Step 8: Wait for MachineConfigPool worker to finish rolling reboot
 # ============================================================
 # The SCTP MachineConfig triggers a rolling reboot of all worker nodes.
 # This takes approximately 10-15 minutes on a standard cluster.
@@ -149,7 +174,7 @@
       | list | length > 0
 
 # ============================================================
-# Step 8: Wait for all 5G child Applications to be Healthy+Synced
+# Step 9: Wait for all 5G child Applications to be Healthy+Synced
 # ============================================================
 # All 7 child apps carry label app.kubernetes.io/part-of=5g-demo.
 # Wave ordering ensures dependencies are respected:
@@ -176,7 +201,7 @@
       | json_query('length([?status.sync.status==`Synced`]) == length(@)')
 
 # ============================================================
-# Step 9: Report user-facing information
+# Step 10: Report user-facing information
 # ============================================================
 - name: Set Open5GS WebUI URL fact
   ansible.builtin.set_fact:
