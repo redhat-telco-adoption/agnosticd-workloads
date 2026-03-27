@@ -118,7 +118,7 @@
 - name: Remove Tempo reader/writer RBAC
   kubernetes.core.k8s:
     state: absent
-    src: "{{ role_path }}/files/tracing/tempo-rbac.yaml"
+    src: "{{ role_path }}/files/tracing/rbac-tempo.yaml"
 
 - name: Remove NetObserv FlowCollector (cluster-scoped)
   kubernetes.core.k8s:

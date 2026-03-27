@@ -2,7 +2,7 @@
 - name: Apply Tempo RBAC (reader + writer ClusterRoles)
   kubernetes.core.k8s:
     state: present
-    src: "{{ role_path }}/files/tracing/tempo-rbac.yaml"
+    src: "{{ role_path }}/files/tracing/rbac-tempo.yaml"
 
 # Create tempo bucket in MinIO (idempotent — skip if already done).
 - name: Check if tempo bucket creation job already succeeded
