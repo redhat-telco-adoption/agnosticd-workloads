@@ -14,6 +14,7 @@
     install_operator_catalog: redhat-operators
     install_operator_automatic_install_plan_approval: true
     install_operator_starting_csv: ""
+    install_operator_install_mode: OwnNamespace
 
 - name: Wait for OLSConfig CRD to be available
   kubernetes.core.k8s_info:
