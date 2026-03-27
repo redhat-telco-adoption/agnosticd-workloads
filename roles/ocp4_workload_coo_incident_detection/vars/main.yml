@@ -1,0 +1,6 @@
+---
+# Internal runtime variables — do not override these in your vars file.
+# They are populated during task execution.
+
+_ocp4_workload_coo_incident_detection_cluster_version: ""
+_ocp4_workload_coo_incident_detection_app_url: ""

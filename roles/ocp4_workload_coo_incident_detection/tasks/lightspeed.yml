@@ -1,0 +1,27 @@
+---
+- name: Create LLM API credentials secret
+  kubernetes.core.k8s:
+    state: present
+    template: lightspeed/secret-llm-credentials.yaml.j2
+
+- name: Apply OLSConfig CR (enables Lightspeed + MCP integration)
+  kubernetes.core.k8s:
+    state: present
+    template: lightspeed/olsconfig.yaml.j2
+
+# OLSConfig deploys PostgreSQL + API server + console plugin.
+# Cold image pull on a new cluster can take 10-12 minutes.
+# Budget: 60 retries × 15s = 15 minutes.
+- name: Wait for Lightspeed API server deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: lightspeed-app-server
+    namespace: openshift-lightspeed
+  register: r_ols
+  retries: 60
+  delay: 15
+  until:
+  - r_ols.resources | length == 1
+  - r_ols.resources[0].status.readyReplicas is defined
+  - r_ols.resources[0].status.readyReplicas >= 1

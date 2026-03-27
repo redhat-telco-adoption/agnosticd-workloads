@@ -1,0 +1,154 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-view
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-pod-logs-reader
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-pod-logs
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-pod-logs-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-monitoring-crd-reader
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules", "servicemonitors", "alertmanagerconfigs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["alertmanagers/api"]
+    resourceNames: ["main"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-monitoring-crd-reader
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-monitoring-crd-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-cluster-monitoring-view
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-lightspeed-access
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: lightspeed-operator-query-access
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-noc-intern-web-terminal
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devworkspace-controller-edit-workspaces
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-pod-exec
+  namespace: acme-5gc-edge
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+rules:
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-noc-intern-pod-exec
+  namespace: acme-5gc-edge
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: demo-pod-exec
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: noc-intern

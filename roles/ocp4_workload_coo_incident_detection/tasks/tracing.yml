@@ -1,0 +1,87 @@
+---
+- name: Apply Tempo RBAC (reader + writer ClusterRoles)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/tracing/tempo-rbac.yaml"
+
+# Create tempo bucket in MinIO (idempotent — skip if already done).
+- name: Check if tempo bucket creation job already succeeded
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-tempo-bucket
+    namespace: openshift-logging
+  register: r_tempo_bucket_job
+
+- name: Create tempo bucket in MinIO
+  when: >-
+    r_tempo_bucket_job.resources | length == 0 or
+    (r_tempo_bucket_job.resources[0].status.succeeded | default(0)) < 1
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/tracing/job-minio-create-tempo-bucket.yaml"
+
+- name: Wait for tempo bucket creation job to complete
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-tempo-bucket
+    namespace: openshift-logging
+  register: r_tempo_bucket_wait
+  retries: 20
+  delay: 15
+  until:
+  - r_tempo_bucket_wait.resources | length == 1
+  - (r_tempo_bucket_wait.resources[0].status.succeeded | default(0)) >= 1
+
+- name: Create Tempo S3 credentials secret
+  kubernetes.core.k8s:
+    state: present
+    template: tracing/secret-tempo-s3.yaml.j2
+
+- name: Create TempoStack CR
+  kubernetes.core.k8s:
+    state: present
+    template: tracing/tempostack.yaml.j2
+
+- name: Wait for TempoStack to reach Ready condition
+  kubernetes.core.k8s_info:
+    api_version: tempo.grafana.com/v1alpha1
+    kind: TempoStack
+    name: tempo-sample
+    namespace: tempo
+  register: r_tempostack
+  retries: 60
+  delay: 15
+  until:
+  - r_tempostack.resources | length == 1
+  - r_tempostack.resources[0].status is defined
+  - r_tempostack.resources[0].status.conditions is defined
+  - r_tempostack.resources[0].status.conditions |
+      selectattr('type', 'equalto', 'Ready') |
+      selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Deploy OpenTelemetry Collector
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/tracing/otelcollector.yaml"
+
+- name: Wait for OTel Collector deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    # The OTel operator names the deployment <name>-collector
+    name: otel-collector
+    namespace: tempo
+  register: r_otel
+  retries: 30
+  delay: 10
+  until:
+  - r_otel.resources | length == 1
+  - r_otel.resources[0].status.readyReplicas is defined
+  - r_otel.resources[0].status.readyReplicas >= 1
+
+- name: Apply Distributed Tracing UIPlugin
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/tracing/uiplugin-distributed-tracing.yaml"

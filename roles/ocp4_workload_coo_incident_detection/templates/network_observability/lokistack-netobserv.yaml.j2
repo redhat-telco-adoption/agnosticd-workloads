@@ -1,0 +1,20 @@
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: netobserv-loki
+  namespace: netobserv
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  size: 1x.extra-small
+  storage:
+    schemas:
+    - effectiveDate: "2024-01-01"
+      version: v13
+    secret:
+      name: netobserv-loki-s3
+      type: s3
+  storageClassName: "{{ ocp4_workload_coo_incident_detection_storage_class }}"
+  tenants:
+    mode: openshift-network

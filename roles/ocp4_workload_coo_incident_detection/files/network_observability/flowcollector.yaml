@@ -1,0 +1,24 @@
+apiVersion: flows.netobserv.io/v1beta2
+kind: FlowCollector
+metadata:
+  name: cluster
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  deploymentModel: Direct
+  agent:
+    type: eBPF
+    ebpf:
+      sampling: 50
+      features:
+        - PacketDrop
+        - DNSTracking
+        - FlowRTT
+  loki:
+    mode: LokiStack
+    lokiStack:
+      name: netobserv-loki
+      namespace: netobserv
+  consolePlugin:
+    register: true

@@ -1,0 +1,52 @@
+---
+ocp_username: "system:admin"
+
+# ── Required ────────────────────────────────────────────────────────────────
+# LLM API token for OpenShift Lightspeed (required).
+ocp4_workload_coo_incident_detection_llm_api_token: ""
+
+# ── Storage ──────────────────────────────────────────────────────────────────
+# StorageClass used for MinIO PVC, LokiStack, TempoStack, and NetObserv LokiStack.
+# On AWS ROSA/OSD use "gp3-csi". Change as needed for your cluster.
+ocp4_workload_coo_incident_detection_storage_class: gp3-csi
+
+# ── MinIO S3 Backend ─────────────────────────────────────────────────────────
+# MinIO is deployed as an in-cluster S3-compatible backend for Loki, Tempo, and NetObserv.
+# These credentials are used only within the cluster (not exposed externally).
+ocp4_workload_coo_incident_detection_minio_access_key: minio
+ocp4_workload_coo_incident_detection_minio_secret_key: minio123
+
+# ── Operator Channels ────────────────────────────────────────────────────────
+# Channel pins for operators whose channel names include a version component.
+# Update these when upgrading to a new operator minor version.
+ocp4_workload_coo_incident_detection_loki_channel: stable-6.4
+ocp4_workload_coo_incident_detection_logging_channel: stable-6.4
+
+# ── LLM / Lightspeed ─────────────────────────────────────────────────────────
+# OpenAI-compatible LLM endpoint used by OpenShift Lightspeed.
+ocp4_workload_coo_incident_detection_llm_api_url: "https://litellm-prod.apps.maas.redhatworkshops.io/v1"
+# Model name as listed by the provider.
+ocp4_workload_coo_incident_detection_llm_model: llama-scout-17b
+# Provider name shown in OLSConfig (can be any string).
+ocp4_workload_coo_incident_detection_llm_provider_name: LiteLLM
+
+# ── Demo User ─────────────────────────────────────────────────────────────────
+# Username for the demo attendee. Must match the user created by
+# ocp4_workload_authentication_htpasswd (used only for RBAC binding names).
+ocp4_workload_coo_incident_detection_demo_user_name: noc-intern
+
+# ── Application Images ────────────────────────────────────────────────────────
+# Image tag for the incident-simulator application images.
+# Images: incident-simulator-backend, incident-simulator-worker, incident-simulator-frontend
+# Registry: quay.io/redhat-telco-adoption/
+ocp4_workload_coo_incident_detection_app_image_tag: latest
+
+# ── Slack Alerting ────────────────────────────────────────────────────────────
+# Incoming webhook URL for the #openshift-alerts Slack channel.
+# Used by the AlertmanagerConfig in the acme-5gc-edge namespace.
+ocp4_workload_coo_incident_detection_slack_webhook_url: ""
+
+# ── Alertmanager Silences ─────────────────────────────────────────────────────
+# Duration (hours) for silencing noisy platform alerts during the demo.
+# Default: 168h = 1 week (suitable for multi-day workshops).
+ocp4_workload_coo_incident_detection_alert_silence_duration_hours: 168

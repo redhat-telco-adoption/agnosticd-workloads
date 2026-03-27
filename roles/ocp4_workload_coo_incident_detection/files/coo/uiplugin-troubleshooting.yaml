@@ -1,0 +1,11 @@
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: troubleshooting-panel
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  type: TroubleshootingPanel
+  troubleshootingPanel:
+    timeout: 30s

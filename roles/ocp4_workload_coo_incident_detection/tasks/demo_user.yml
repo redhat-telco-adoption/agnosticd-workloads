@@ -1,0 +1,8 @@
+---
+# User creation is handled by ocp4_workload_authentication_htpasswd.
+# This task only applies RBAC for the demo user.
+
+- name: Apply noc-intern RBAC
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/demo_user/rbac-noc-intern.yaml"

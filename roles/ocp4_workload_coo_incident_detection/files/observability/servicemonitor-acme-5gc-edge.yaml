@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: acme-5gc-edge
+  namespace: acme-5gc-edge
+  labels:
+    app.kubernetes.io/part-of: acme-5gc-edge-site
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: acme-5gc-edge-site
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scheme: http
+  namespaceSelector:
+    matchNames:
+      - acme-5gc-edge

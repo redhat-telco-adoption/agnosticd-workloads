@@ -1,0 +1,58 @@
+---
+# COO Incident Detection Demo — provision orchestrator
+# Tasks run in strict dependency order. Each include_tasks file is self-contained
+# and blocks until its resources are ready before returning.
+
+- name: Validate cluster prerequisites
+  ansible.builtin.include_tasks: pre_checks.yml
+
+- name: Create application namespaces
+  ansible.builtin.include_tasks: namespaces.yml
+
+- name: Install core operators (COO, Loki, Logging, Web Terminal)
+  ansible.builtin.include_tasks: operators_core.yml
+
+- name: Install observability operators (Lightspeed, Tempo, OTel, NetObserv)
+  ansible.builtin.include_tasks: operators_observability.yml
+
+- name: Enable user workload monitoring
+  ansible.builtin.include_tasks: user_workload_monitoring.yml
+
+- name: Deploy MinIO S3 backend
+  ansible.builtin.include_tasks: minio.yml
+
+- name: Configure LokiStack and log collection
+  ansible.builtin.include_tasks: loki_stack.yml
+
+- name: Configure COO UIPlugins
+  ansible.builtin.include_tasks: coo_uiplugins.yml
+
+- name: Deploy Cluster Health Analyzer MCP server
+  ansible.builtin.include_tasks: mcp_server.yml
+
+- name: Configure OpenShift Lightspeed
+  ansible.builtin.include_tasks: lightspeed.yml
+
+- name: Configure distributed tracing (Tempo + OTel)
+  ansible.builtin.include_tasks: tracing.yml
+
+- name: Configure network observability
+  ansible.builtin.include_tasks: network_observability.yml
+
+- name: Deploy demo applications
+  ansible.builtin.include_tasks: applications.yml
+
+- name: Configure observability resources (ServiceMonitors + PrometheusRules)
+  ansible.builtin.include_tasks: observability_resources.yml
+
+- name: Deploy Perses dashboards
+  ansible.builtin.include_tasks: perses.yml
+
+- name: Silence noisy platform Alertmanager alerts
+  ansible.builtin.include_tasks: silence_alerts.yml
+
+- name: Configure demo user
+  ansible.builtin.include_tasks: demo_user.yml
+
+- name: Report workload information
+  ansible.builtin.include_tasks: workload_info.yml

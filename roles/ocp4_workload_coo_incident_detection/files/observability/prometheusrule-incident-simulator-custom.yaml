@@ -1,0 +1,258 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-simulator-alerts-custom
+  namespace: incident-simulator
+  labels:
+    app.kubernetes.io/part-of: incident-simulator
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+    - name: incident-simulator.custom-metrics
+      rules:
+        - alert: IncidentSimulatorDNSFailure
+          expr: |
+            incident_simulator_active_incidents{type="dns_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "DNS resolution failures detected"
+            description: "Simulated DNS failure incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-dns"
+
+        - alert: IncidentSimulatorProbeFailure
+          expr: |
+            incident_simulator_active_incidents{type="probe_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Liveness/readiness probes failing"
+            description: "Simulated probe failure incident is active - pod restarts imminent"
+            runbook_url: "https://example.com/runbooks/incident-simulator-probes"
+
+        - alert: IncidentSimulatorImagePullFailure
+          expr: |
+            incident_simulator_active_incidents{type="image_pull_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Image pull failures detected"
+            description: "Simulated ImagePullBackOff incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-imagepull"
+
+        - alert: IncidentSimulatorOOMKilled
+          expr: |
+            incident_simulator_active_incidents{type="oom_kill"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Container was OOM killed"
+            description: "Simulated OOM kill incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-oom"
+
+        - alert: IncidentSimulatorPodCrashLooping
+          expr: |
+            incident_simulator_active_incidents{type="crash_loop"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Pod is crash looping"
+            description: "Simulated crash loop incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-crashloop"
+
+        - alert: IncidentSimulatorConnectionFailure
+          expr: |
+            incident_simulator_active_incidents{type="connection_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Database/service connection failures"
+            description: "Simulated connection failure incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-connection"
+
+        - alert: IncidentSimulatorCascadingFailure
+          expr: |
+            incident_simulator_active_incidents{type="cascading_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Cascading failure detected"
+            description: "Simulated cascading failure incident is active - multiple services affected"
+            runbook_url: "https://example.com/runbooks/incident-simulator-cascading"
+
+        - alert: IncidentSimulatorCertExpiryCritical
+          expr: |
+            incident_simulator_active_incidents{type="cert_expiry", severity="critical"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "TLS certificate expiry imminent"
+            description: "Simulated critical certificate expiry incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-certs"
+
+        - alert: IncidentSimulatorHighErrorRate
+          expr: |
+            incident_simulator_active_incidents{type="error_spike"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "High error rate detected in Incident Simulator"
+            description: "Simulated error spike incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-errors"
+
+        - alert: IncidentSimulatorHighLatency
+          expr: |
+            incident_simulator_active_incidents{type="high_latency"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "High latency detected in Incident Simulator"
+            description: "Simulated high latency incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-latency"
+
+        - alert: IncidentSimulatorMemoryLeak
+          expr: |
+            incident_simulator_active_incidents{type="memory_leak"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Potential memory leak detected in worker"
+            description: "Simulated memory leak incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-memleak"
+
+        - alert: IncidentSimulatorCPUSaturation
+          expr: |
+            incident_simulator_active_incidents{type="cpu_saturation"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "CPU saturation active in worker"
+            description: "Simulated CPU saturation incident is active"
+
+        - alert: IncidentSimulatorCertExpiring
+          expr: |
+            incident_simulator_active_incidents{type="cert_expiry", severity="warning"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "TLS certificate expiring soon"
+            description: "Simulated certificate expiry warning incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-certs"
+
+        - alert: IncidentSimulatorQuotaExhausted
+          expr: |
+            incident_simulator_active_incidents{type="quota_exhausted"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Resource quota nearly exhausted"
+            description: "Simulated quota exhaustion incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-quota"
+
+        - alert: IncidentSimulatorAuthFailure
+          expr: |
+            incident_simulator_active_incidents{type="auth_failure"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Authentication/authorization failures detected"
+            description: "Simulated authentication failure incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-auth"
+
+        - alert: IncidentSimulatorNetworkBlocked
+          expr: |
+            incident_simulator_active_incidents{type="network_blocked"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Network policy blocking traffic"
+            description: "Simulated network blocking incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-network"
+
+        - alert: IncidentSimulatorAPIThrottling
+          expr: |
+            incident_simulator_active_incidents{type="api_throttling"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "API rate limiting active"
+            description: "Simulated API throttling incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-throttling"
+
+        - alert: IncidentSimulatorDiskPressure
+          expr: |
+            incident_simulator_active_incidents{type="disk_pressure"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Disk pressure detected"
+            description: "Simulated disk pressure incident is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-disk"
+
+        - alert: IncidentSimulatorActiveIncidents
+          expr: |
+            sum(incident_simulator_active_incidents) > 0
+          for: 0m
+          labels:
+            severity: info
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "Active incidents in Incident Simulator"
+            description: "There are {{ $value }} active simulated incidents"

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-nrf
+  namespace: acme-5gc-edge
+  labels:
+    app: acme-nrf
+    app.kubernetes.io/name: acme-nrf
+    app.kubernetes.io/component: nrf
+    app.kubernetes.io/part-of: acme-5gc-edge-site
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  selector:
+    app: acme-nrf
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

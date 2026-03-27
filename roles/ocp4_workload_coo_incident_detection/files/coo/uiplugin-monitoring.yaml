@@ -1,0 +1,20 @@
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: monitoring
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  type: Monitoring
+  monitoring:
+    incidents:
+      enabled: true
+    perses:
+      enabled: true
+    alertmanagerEndpoint:
+      url: https://alertmanager-main.openshift-monitoring.svc:9094
+      basePath: /api
+    thanosQuerierEndpoint:
+      url: https://thanos-querier.openshift-monitoring.svc:9091
+      basePath: /api

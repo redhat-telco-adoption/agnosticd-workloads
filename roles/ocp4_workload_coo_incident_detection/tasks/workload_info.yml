@@ -1,0 +1,31 @@
+---
+- name: Get incident-simulator route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: incident-simulator
+    namespace: incident-simulator
+  register: r_route
+
+- name: Set application URL fact
+  ansible.builtin.set_fact:
+    _ocp4_workload_coo_incident_detection_app_url: >-
+      https://{{ r_route.resources[0].spec.host }}
+
+- name: Report workload access information
+  agnosticd.core.agnosticd_user_info:
+    msg: |
+      COO Incident Detection Demo deployed successfully.
+
+      Incident Simulator:   {{ _ocp4_workload_coo_incident_detection_app_url }}
+      OpenShift Console:    {{ openshift_console_url }}
+      Incidents View:       {{ openshift_console_url }}/observe/incidents
+
+      Demo User:            {{ ocp4_workload_coo_incident_detection_demo_user_name }}
+      Demo Password:        {{ ocp4_workload_coo_incident_detection_demo_user_password }}
+    data:
+      app_url: "{{ _ocp4_workload_coo_incident_detection_app_url }}"
+      console_url: "{{ openshift_console_url }}"
+      incidents_url: "{{ openshift_console_url }}/observe/incidents"
+      demo_user: "{{ ocp4_workload_coo_incident_detection_demo_user_name }}"
+      demo_password: "{{ ocp4_workload_coo_incident_detection_demo_user_password }}"

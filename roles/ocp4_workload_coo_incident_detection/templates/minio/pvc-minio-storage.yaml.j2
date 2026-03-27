@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-storage
+  namespace: openshift-logging
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: "{{ ocp4_workload_coo_incident_detection_storage_class }}"
+  resources:
+    requests:
+      storage: 50Gi

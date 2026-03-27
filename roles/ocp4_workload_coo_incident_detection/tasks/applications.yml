@@ -1,0 +1,93 @@
+---
+# incident-simulator application
+- name: Deploy incident-simulator backend-api
+  kubernetes.core.k8s:
+    state: present
+    template: applications/deployment-backend-api.yaml.j2
+
+- name: Create backend-api service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/applications/backend-api/service-backend-api.yaml"
+
+- name: Deploy incident-simulator worker
+  kubernetes.core.k8s:
+    state: present
+    template: applications/deployment-worker.yaml.j2
+
+- name: Create worker service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/applications/worker/service-worker.yaml"
+
+- name: Deploy incident-simulator frontend
+  kubernetes.core.k8s:
+    state: present
+    template: applications/deployment-frontend.yaml.j2
+
+- name: Create frontend service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/applications/frontend/service-frontend.yaml"
+
+- name: Create frontend Route
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/applications/frontend/route-frontend.yaml"
+
+# acme-5gc-edge network functions
+- name: Deploy acme-5gc-edge network functions
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/applications/acme-5gc-edge/{{ item }}"
+  loop:
+  - deployment-nrf.yaml
+  - deployment-amf.yaml
+  - deployment-smf.yaml
+  - deployment-upf.yaml
+  - deployment-charging.yaml
+  - service-nrf.yaml
+  - service-amf.yaml
+  - service-smf.yaml
+  - service-upf.yaml
+  - service-charging.yaml
+
+# Wait for all incident-simulator pods
+- name: Wait for incident-simulator deployments to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: incident-simulator
+  register: r_app
+  retries: 30
+  delay: 10
+  until:
+  - r_app.resources | length == 1
+  - r_app.resources[0].status.readyReplicas is defined
+  - r_app.resources[0].status.readyReplicas >= 1
+  loop:
+  - backend-api
+  - worker
+  - frontend
+
+# Wait for all acme-5gc-edge pods
+- name: Wait for acme-5gc-edge network function deployments to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: acme-5gc-edge
+  register: r_acme
+  retries: 30
+  delay: 10
+  until:
+  - r_acme.resources | length == 1
+  - r_acme.resources[0].status.readyReplicas is defined
+  - r_acme.resources[0].status.readyReplicas >= 1
+  loop:
+  - acme-nrf
+  - acme-amf
+  - acme-smf
+  - acme-upf
+  - acme-charging-cdr

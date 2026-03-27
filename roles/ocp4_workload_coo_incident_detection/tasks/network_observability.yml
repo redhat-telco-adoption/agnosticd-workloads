@@ -1,0 +1,62 @@
+---
+# Create netobserv bucket in MinIO (idempotent).
+- name: Check if netobserv bucket creation job already succeeded
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-netobserv-bucket
+    namespace: openshift-logging
+  register: r_netobserv_bucket_job
+
+- name: Create netobserv bucket in MinIO
+  when: >-
+    r_netobserv_bucket_job.resources | length == 0 or
+    (r_netobserv_bucket_job.resources[0].status.succeeded | default(0)) < 1
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/network_observability/job-minio-create-netobserv-bucket.yaml"
+
+- name: Wait for netobserv bucket creation job to complete
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-netobserv-bucket
+    namespace: openshift-logging
+  register: r_netobserv_bucket_wait
+  retries: 20
+  delay: 15
+  until:
+  - r_netobserv_bucket_wait.resources | length == 1
+  - (r_netobserv_bucket_wait.resources[0].status.succeeded | default(0)) >= 1
+
+- name: Create NetObserv LokiStack S3 credentials secret
+  kubernetes.core.k8s:
+    state: present
+    template: network_observability/secret-netobserv-loki-s3.yaml.j2
+
+- name: Create NetObserv LokiStack CR
+  kubernetes.core.k8s:
+    state: present
+    template: network_observability/lokistack-netobserv.yaml.j2
+
+- name: Wait for NetObserv LokiStack to reach Ready condition
+  kubernetes.core.k8s_info:
+    api_version: loki.grafana.com/v1
+    kind: LokiStack
+    name: netobserv-loki
+    namespace: netobserv
+  register: r_netobserv_lokistack
+  retries: 60
+  delay: 15
+  until:
+  - r_netobserv_lokistack.resources | length == 1
+  - r_netobserv_lokistack.resources[0].status is defined
+  - r_netobserv_lokistack.resources[0].status.conditions is defined
+  - r_netobserv_lokistack.resources[0].status.conditions |
+      selectattr('type', 'equalto', 'Ready') |
+      selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Apply FlowCollector CR
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/network_observability/flowcollector.yaml"

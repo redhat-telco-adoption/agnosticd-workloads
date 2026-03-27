@@ -1,0 +1,49 @@
+---
+# Silence noisy platform alerts for the duration of the demo.
+# These alerts fire by default on fresh clusters and would distract from the demo narrative.
+# Mirrors the silence_platform_alerts() function in scripts/deploy.sh.
+
+- name: Get alertmanager pod name
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-monitoring
+    label_selectors:
+    - app=alertmanager
+    - alertmanager=main
+  register: r_am_pods
+
+- name: Compute silence end timestamp
+  ansible.builtin.set_fact:
+    _ocp4_workload_coo_incident_detection_silence_end: >-
+      {{ '%Y-%m-%dT%H:%M:%S.000Z' | strftime(
+           (ansible_date_time.epoch | int) +
+           (ocp4_workload_coo_incident_detection_alert_silence_duration_hours | int * 3600)
+         ) }}
+
+- name: Silence noisy platform alerts in Alertmanager
+  kubernetes.core.k8s_exec:
+    namespace: openshift-monitoring
+    pod: "{{ r_am_pods.resources[0].metadata.name }}"
+    command:
+    - /bin/sh
+    - -c
+    - >-
+      curl -s -o /dev/null -w "%{http_code}" -X POST
+      http://localhost:9093/api/v2/silences
+      -H 'Content-Type: application/json'
+      -d '{
+        "matchers": [{"name": "alertname", "value": "{{ item }}", "isRegex": false}],
+        "startsAt": "{{ ansible_date_time.iso8601 }}",
+        "endsAt": "{{ _ocp4_workload_coo_incident_detection_silence_end }}",
+        "createdBy": "agnosticd",
+        "comment": "Demo environment silence — suppressed during COO incident detection demo"
+      }'
+  register: r_silence
+  changed_when: r_silence.stdout | trim == "200"
+  loop:
+  - ClusterLogForwarderDeprecations
+  - AlertmanagerReceiversNotConfigured
+  - PodDisruptionBudgetAtLimit
+  - HighOverallControlPlaneMemory
+  - Watchdog

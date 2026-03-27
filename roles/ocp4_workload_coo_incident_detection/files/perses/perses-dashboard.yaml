@@ -1,0 +1,489 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: acme-5gc-edge-site-health
+  namespace: acme-5gc-edge
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  config:
+    display:
+      name: "ACME 5G Core Edge — Site Health"
+    datasources: {}
+    variables: []
+    duration: 30m
+    refreshInterval: 30s
+    panels:
+      degraded_services:
+        kind: Panel
+        spec:
+          display:
+            name: "Degraded Services"
+            description: "Number of NFs currently degraded. 0 = all healthy."
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: All Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'count(acme_5gc_edge_service_health{namespace="acme-5gc-edge"} == 0) or vector(0)'
+
+      total_failed_ops:
+        kind: Panel
+        spec:
+          display:
+            name: "Failed Ops/s"
+            description: "Total rate of failed operations across all NFs. Spikes indicate active incident."
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: No Failures
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'sum(rate(acme_5gc_edge_operations_total{status="error",namespace="acme-5gc-edge"}[5m]))'
+
+      nrf_health:
+        kind: Panel
+        spec:
+          display:
+            name: "NRF"
+            description: "Network Repository Function (1=healthy, 0=degraded)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: Degraded
+                      color: "#ff0000"
+                - kind: Value
+                  spec:
+                    value: "1"
+                    result:
+                      value: Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{service="acme-nrf",namespace="acme-5gc-edge"}'
+
+      amf_health:
+        kind: Panel
+        spec:
+          display:
+            name: "AMF"
+            description: "Access & Mobility Management Function (1=healthy, 0=degraded)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: Degraded
+                      color: "#ff0000"
+                - kind: Value
+                  spec:
+                    value: "1"
+                    result:
+                      value: Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{service="acme-amf",namespace="acme-5gc-edge"}'
+
+      smf_health:
+        kind: Panel
+        spec:
+          display:
+            name: "SMF"
+            description: "Session Management Function (1=healthy, 0=degraded)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: Degraded
+                      color: "#ff0000"
+                - kind: Value
+                  spec:
+                    value: "1"
+                    result:
+                      value: Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{service="acme-smf",namespace="acme-5gc-edge"}'
+
+      upf_health:
+        kind: Panel
+        spec:
+          display:
+            name: "UPF"
+            description: "User Plane Function (1=healthy, 0=degraded)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: Degraded
+                      color: "#ff0000"
+                - kind: Value
+                  spec:
+                    value: "1"
+                    result:
+                      value: Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{service="acme-upf",namespace="acme-5gc-edge"}'
+
+      cdr_health:
+        kind: Panel
+        spec:
+          display:
+            name: "CDR"
+            description: "Charging Data Records pipeline (1=healthy, 0=degraded)"
+          plugin:
+            kind: StatChart
+            spec:
+              calculation: last-number
+              format:
+                unit: decimal
+              legendMode: auto
+              sparkline: {}
+              mappings:
+                - kind: Value
+                  spec:
+                    value: "0"
+                    result:
+                      value: Degraded
+                      color: "#ff0000"
+                - kind: Value
+                  spec:
+                    value: "1"
+                    result:
+                      value: Healthy
+                      color: "#7fff00"
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{service="acme-charging-cdr",namespace="acme-5gc-edge"}'
+
+      all_nf_health:
+        kind: Panel
+        spec:
+          display:
+            name: "NF Health Timeline"
+            description: "Health signal per NF over time — watch the cascade: NRF drops first, then AMF/SMF/UPF/CDR follow."
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+              yAxis:
+                format:
+                  unit: decimal
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_service_health{namespace="acme-5gc-edge"}'
+                    seriesNameFormat: "{{service}}"
+
+      dependency_health:
+        kind: Panel
+        spec:
+          display:
+            name: "Dependency Link Health"
+            description: "NF-to-NF dependency status (1=connected, 0=broken). Broken NRF links explain the downstream cascade."
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+              yAxis:
+                format:
+                  unit: decimal
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_dependency_status{namespace="acme-5gc-edge"}'
+                    seriesNameFormat: "{{service}} → {{dependency}}"
+
+      active_errors:
+        kind: Panel
+        spec:
+          display:
+            name: "Active Fault Conditions by NF"
+            description: "Active fault signals (1=fault active). Root cause: NRF DB exhaustion cascades to AMF, SMF, UPF, CDR."
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+              yAxis:
+                format:
+                  unit: decimal
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'acme_5gc_edge_error_active{namespace="acme-5gc-edge"}'
+                    seriesNameFormat: "{{service}} — {{error_type}}"
+
+      success_rate:
+        kind: Panel
+        spec:
+          display:
+            name: "Operation Success Rate per NF"
+            description: "Fraction of operations succeeding (1.0=all success, 0=all failing). Business impact of the incident."
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+              yAxis:
+                format:
+                  unit: decimal
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'sum(rate(acme_5gc_edge_operations_total{status="success",namespace="acme-5gc-edge"}[5m])) by (service) / sum(rate(acme_5gc_edge_operations_total{namespace="acme-5gc-edge"}[5m])) by (service)'
+                    seriesNameFormat: "{{service}}"
+
+      ops_success:
+        kind: Panel
+        spec:
+          display:
+            name: "Successful Operations/s"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'sum(rate(acme_5gc_edge_operations_total{status="success",namespace="acme-5gc-edge"}[5m])) by (service)'
+                    seriesNameFormat: "{{service}}"
+
+      ops_errors:
+        kind: Panel
+        spec:
+          display:
+            name: "Failed Operations/s"
+            description: "Rate of failed operations per NF. Spikes reveal root-cause propagation order."
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                position: bottom
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: 'sum(rate(acme_5gc_edge_operations_total{status="error",namespace="acme-5gc-edge"}[5m])) by (service)'
+                    seriesNameFormat: "{{service}}"
+
+    layouts:
+      - kind: Grid
+        spec:
+          display:
+            title: "Incident Overview"
+            collapse:
+              open: true
+          items:
+            - x: 0
+              "y": 0
+              width: 12
+              height: 8
+              content:
+                $ref: "#/spec/panels/degraded_services"
+            - x: 12
+              "y": 0
+              width: 12
+              height: 8
+              content:
+                $ref: "#/spec/panels/total_failed_ops"
+            - x: 0
+              "y": 8
+              width: 5
+              height: 6
+              content:
+                $ref: "#/spec/panels/nrf_health"
+            - x: 5
+              "y": 8
+              width: 5
+              height: 6
+              content:
+                $ref: "#/spec/panels/amf_health"
+            - x: 10
+              "y": 8
+              width: 5
+              height: 6
+              content:
+                $ref: "#/spec/panels/smf_health"
+            - x: 15
+              "y": 8
+              width: 4
+              height: 6
+              content:
+                $ref: "#/spec/panels/upf_health"
+            - x: 19
+              "y": 8
+              width: 5
+              height: 6
+              content:
+                $ref: "#/spec/panels/cdr_health"
+
+      - kind: Grid
+        spec:
+          display:
+            title: "Failure Cascade"
+            collapse:
+              open: true
+          items:
+            - x: 0
+              "y": 0
+              width: 12
+              height: 10
+              content:
+                $ref: "#/spec/panels/all_nf_health"
+            - x: 12
+              "y": 0
+              width: 12
+              height: 10
+              content:
+                $ref: "#/spec/panels/dependency_health"
+
+      - kind: Grid
+        spec:
+          display:
+            title: "Active Faults"
+            collapse:
+              open: true
+          items:
+            - x: 0
+              "y": 0
+              width: 24
+              height: 10
+              content:
+                $ref: "#/spec/panels/active_errors"
+
+      - kind: Grid
+        spec:
+          display:
+            title: "Business Impact"
+            collapse:
+              open: true
+          items:
+            - x: 0
+              "y": 0
+              width: 24
+              height: 8
+              content:
+                $ref: "#/spec/panels/success_rate"
+            - x: 0
+              "y": 8
+              width: 12
+              height: 8
+              content:
+                $ref: "#/spec/panels/ops_success"
+            - x: 12
+              "y": 8
+              width: 12
+              height: 8
+              content:
+                $ref: "#/spec/panels/ops_errors"

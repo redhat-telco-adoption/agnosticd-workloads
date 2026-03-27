@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-health-analyzer-mcp
+  namespace: openshift-cluster-observability-operator
+  labels:
+    app.kubernetes.io/name: cluster-health-analyzer-mcp
+    app.kubernetes.io/component: mcp-server
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-health-analyzer-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-health-analyzer-mcp
+        app.kubernetes.io/component: mcp-server
+    spec:
+      serviceAccountName: cluster-health-analyzer-mcp-thanos-querier
+      automountServiceAccountToken: true
+      containers:
+        - name: cluster-health-mcp-server
+          image: "quay.io/openshiftanalytics/cluster-health-analyzer:mcp-dev-preview"
+          imagePullPolicy: Always
+          args:
+            - mcp
+          env:
+            - name: PROM_URL
+              value: "https://thanos-querier.openshift-monitoring.svc.cluster.local:9091/"
+            - name: ALERTMANAGER_URL
+              value: "https://alertmanager-main.openshift-monitoring.svc.cluster.local:9094"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - containerPort: 8085
+              name: mcp
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          terminationMessagePolicy: FallbackToLogsOnError

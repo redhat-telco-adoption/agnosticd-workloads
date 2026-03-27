@@ -1,0 +1,22 @@
+---
+- name: Apply incident-simulator observability resources
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/observability/{{ item }}"
+  loop:
+  - servicemonitor-incident-simulator.yaml
+  - prometheusrule-incident-simulator.yaml
+  - prometheusrule-incident-simulator-custom.yaml
+
+- name: Apply acme-5gc-edge observability resources
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/observability/{{ item }}"
+  loop:
+  - servicemonitor-acme-5gc-edge.yaml
+  - prometheusrule-acme-5gc-edge.yaml
+
+- name: Apply acme-5gc-edge AlertmanagerConfig and Slack webhook secret
+  kubernetes.core.k8s:
+    state: present
+    template: observability/alertmanagerconfig-acme-5gc-edge.yaml.j2

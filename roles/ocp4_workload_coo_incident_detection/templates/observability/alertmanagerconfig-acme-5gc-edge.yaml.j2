@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-webhook
+  namespace: acme-5gc-edge
+  labels:
+    app.kubernetes.io/part-of: acme-5gc-edge-site
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+type: Opaque
+stringData:
+  url: "{{ ocp4_workload_coo_incident_detection_slack_webhook_url }}"
+---
+apiVersion: monitoring.coreos.com/v1beta1
+kind: AlertmanagerConfig
+metadata:
+  name: acme-5gc-edge-slack
+  namespace: acme-5gc-edge
+  labels:
+    app.kubernetes.io/part-of: acme-5gc-edge-site
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  route:
+    receiver: slack
+    groupBy:
+      - namespace
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+  receivers:
+    - name: slack
+      slackConfigs:
+        - channel: "#openshift-alerts"
+          sendResolved: true
+          apiURL:
+            name: slack-webhook
+            key: url
+          title: '{% raw %}{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} [{{ .Status | toUpper }}] ACME 5G Core Edge Site — {{ .Alerts.Firing | len }} alert(s){% endraw %}'
+          titleLink: '{% raw %}{{ .ExternalURL }}/incidents?days=1+day&severity=Critical%2CWarning&state=Firing{% endraw %}'
+          text: |-
+            {% raw %}*Namespace:* {{ .CommonLabels.namespace }}
+            {{ range .Alerts }}
+            • *{{ .Labels.alertname }}* ({{ .Labels.severity }}) — {{ .Labels.app }}
+            {{ end }}{% endraw %}

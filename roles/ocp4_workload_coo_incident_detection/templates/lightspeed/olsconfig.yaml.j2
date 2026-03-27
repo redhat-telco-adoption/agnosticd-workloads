@@ -1,0 +1,53 @@
+apiVersion: ols.openshift.io/v1alpha1
+kind: OLSConfig
+metadata:
+  name: cluster
+  namespace: openshift-lightspeed
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  # Enable the MCP Server feature gate for incident detection integration
+  featureGates:
+  - MCPServer
+  llm:
+    providers:
+    - name: "{{ ocp4_workload_coo_incident_detection_llm_provider_name }}"
+      type: openai
+      url: "{{ ocp4_workload_coo_incident_detection_llm_api_url }}"
+      credentialsSecretRef:
+        name: llm-credentials
+      models:
+      - name: "{{ ocp4_workload_coo_incident_detection_llm_model }}"
+  # MCP Server configuration — connects Lightspeed to the Cluster Health Analyzer
+  mcpServers:
+  - name: cluster-health
+    url: 'http://cluster-health-mcp-server.openshift-cluster-observability-operator.svc.cluster.local:8085/mcp'
+    timeout: 5
+    headers:
+    - name: kubernetes-authorization
+      valueFrom:
+        type: kubernetes
+  ols:
+    defaultProvider: "{{ ocp4_workload_coo_incident_detection_llm_provider_name }}"
+    defaultModel: "{{ ocp4_workload_coo_incident_detection_llm_model }}"
+    conversationCache:
+      type: postgres
+      postgres:
+        maxConnections: 2000
+        sharedBuffers: 256MB
+    introspectionEnabled: true
+    logLevel: DEBUG
+    deployment:
+      api:
+        replicas: 1
+      console:
+        replicas: 1
+      database:
+        replicas: 1
+    queryFilters:
+    - name: ip-address
+      pattern: ((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}
+      replaceWith: <IP-ADDRESS>
+  olsDataCollector:
+    logLevel: INFO

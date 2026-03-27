@@ -1,0 +1,29 @@
+---
+- name: Apply MCP server ServiceAccount and RBAC
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/mcp_server/service-account.yaml"
+
+- name: Deploy MCP server
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/mcp_server/deployment.yaml"
+
+- name: Create MCP server service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/mcp_server/service.yaml"
+
+- name: Wait for MCP server deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: cluster-health-analyzer-mcp
+    namespace: openshift-cluster-observability-operator
+  register: r_mcp
+  retries: 30
+  delay: 10
+  until:
+  - r_mcp.resources | length == 1
+  - r_mcp.resources[0].status.readyReplicas is defined
+  - r_mcp.resources[0].status.readyReplicas >= 1

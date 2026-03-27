@@ -1,0 +1,15 @@
+---
+- name: Apply COO UIPlugin for Monitoring (incidents + perses enabled)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/coo/uiplugin-monitoring.yaml"
+
+- name: Apply COO UIPlugin for Logging (references LokiStack)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/coo/uiplugin-logging.yaml"
+
+- name: Apply COO UIPlugin for Troubleshooting Panel
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/coo/uiplugin-troubleshooting.yaml"

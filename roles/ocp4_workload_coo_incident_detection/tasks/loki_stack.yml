@@ -1,0 +1,61 @@
+---
+- name: Create LokiStack S3 credentials secret
+  kubernetes.core.k8s:
+    state: present
+    template: loki/secret-loki-s3.yaml.j2
+
+- name: Apply log collector RBAC (ClusterRoleBindings for Vector)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/loki/rbac-collector.yaml"
+
+- name: Create LokiStack CR
+  kubernetes.core.k8s:
+    state: present
+    template: loki/lokistack.yaml.j2
+
+# LokiStack initialization takes 3-8 minutes on demo-sized clusters.
+# Budget: 60 retries × 15s = 15 minutes.
+- name: Wait for LokiStack to reach Ready condition
+  kubernetes.core.k8s_info:
+    api_version: loki.grafana.com/v1
+    kind: LokiStack
+    name: logging-loki
+    namespace: openshift-logging
+  register: r_lokistack
+  retries: 60
+  delay: 15
+  until:
+  - r_lokistack.resources | length == 1
+  - r_lokistack.resources[0].status is defined
+  - r_lokistack.resources[0].status.conditions is defined
+  - r_lokistack.resources[0].status.conditions |
+      selectattr('type', 'equalto', 'Ready') |
+      selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Create ClusterLogging instance
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/loki/clusterlogging.yaml"
+
+- name: Create ClusterLogForwarder
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/loki/clusterlogforwarder.yaml"
+
+- name: Wait for ClusterLogForwarder to be Ready
+  kubernetes.core.k8s_info:
+    api_version: observability.openshift.io/v1
+    kind: ClusterLogForwarder
+    name: instance
+    namespace: openshift-logging
+  register: r_clf
+  retries: 30
+  delay: 10
+  until:
+  - r_clf.resources | length == 1
+  - r_clf.resources[0].status is defined
+  - r_clf.resources[0].status.conditions is defined
+  - r_clf.resources[0].status.conditions |
+      selectattr('type', 'equalto', 'Ready') |
+      selectattr('status', 'equalto', 'True') | list | length == 1

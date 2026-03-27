@@ -1,0 +1,19 @@
+---
+- name: Enable user workload monitoring
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/monitoring/cluster-monitoring-config.yaml"
+
+- name: Wait for user workload Prometheus StatefulSet to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    name: prometheus-user-workload
+    namespace: openshift-user-workload-monitoring
+  register: r_uwm_prometheus
+  retries: 30
+  delay: 10
+  until:
+  - r_uwm_prometheus.resources | length == 1
+  - r_uwm_prometheus.resources[0].status.readyReplicas is defined
+  - r_uwm_prometheus.resources[0].status.readyReplicas >= 1

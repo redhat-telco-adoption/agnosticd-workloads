@@ -1,0 +1,64 @@
+---
+- name: Create MinIO credentials secret
+  kubernetes.core.k8s:
+    state: present
+    template: minio/secret-minio-credentials.yaml.j2
+
+- name: Create MinIO storage PVC
+  kubernetes.core.k8s:
+    state: present
+    template: minio/pvc-minio-storage.yaml.j2
+
+- name: Deploy MinIO
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/minio/deployment-minio.yaml"
+
+- name: Create MinIO service
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/minio/service-minio.yaml"
+
+- name: Wait for MinIO deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: minio
+    namespace: openshift-logging
+  register: r_minio
+  retries: 30
+  delay: 10
+  until:
+  - r_minio.resources | length == 1
+  - r_minio.resources[0].status.readyReplicas is defined
+  - r_minio.resources[0].status.readyReplicas >= 1
+
+# Bucket creation Job is idempotent — only create if it hasn't completed yet.
+- name: Check if loki bucket creation job already succeeded
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-bucket
+    namespace: openshift-logging
+  register: r_loki_bucket_job
+
+- name: Create loki bucket in MinIO
+  when: >-
+    r_loki_bucket_job.resources | length == 0 or
+    (r_loki_bucket_job.resources[0].status.succeeded | default(0)) < 1
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/minio/job-minio-create-loki-bucket.yaml"
+
+- name: Wait for loki bucket creation job to complete
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: minio-create-bucket
+    namespace: openshift-logging
+  register: r_loki_bucket_job_wait
+  retries: 20
+  delay: 15
+  until:
+  - r_loki_bucket_job_wait.resources | length == 1
+  - (r_loki_bucket_job_wait.resources[0].status.succeeded | default(0)) >= 1

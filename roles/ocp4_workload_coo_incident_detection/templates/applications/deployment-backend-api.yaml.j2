@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: incident-simulator
+  labels:
+    app: backend-api
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: incident-simulator
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+        app.kubernetes.io/name: backend-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: incident-simulator
+        demo.redhat.com/name: coo-incident-detection
+    spec:
+      containers:
+      - name: backend-api
+        image: "quay.io/redhat-telco-adoption/incident-simulator-backend:{{ ocp4_workload_coo_incident_detection_app_image_tag }}"
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: WORKER_URL
+          value: "http://worker:8081"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "otel-collector.tempo.svc.cluster.local:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "backend-api"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.namespace=incident-simulator,service.version=1.0.0"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5

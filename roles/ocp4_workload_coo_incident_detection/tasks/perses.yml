@@ -1,0 +1,15 @@
+---
+- name: Apply Perses datasource RBAC
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/perses/perses-rbac.yaml"
+
+- name: Apply Perses datasource
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/perses/perses-datasource.yaml"
+
+- name: Apply Perses dashboard
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/perses/perses-dashboard.yaml"

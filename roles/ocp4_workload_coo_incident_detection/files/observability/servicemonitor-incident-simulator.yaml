@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: incident-simulator-backend
+  namespace: incident-simulator
+  labels:
+    app: backend-api
+    app.kubernetes.io/part-of: incident-simulator
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scheme: http
+  namespaceSelector:
+    matchNames:
+      - incident-simulator
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: incident-simulator-worker
+  namespace: incident-simulator
+  labels:
+    app: worker
+    app.kubernetes.io/part-of: incident-simulator
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scheme: http
+  namespaceSelector:
+    matchNames:
+      - incident-simulator

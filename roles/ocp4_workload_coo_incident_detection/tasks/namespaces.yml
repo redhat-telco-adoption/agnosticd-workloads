@@ -1,0 +1,21 @@
+---
+# Application namespaces not created by the install_operator role.
+# Operator namespaces (openshift-logging, openshift-lightspeed, etc.) are
+# created automatically by install_operator when it sets up each operator.
+
+- name: Create demo application namespaces
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item }}"
+        labels:
+          app.kubernetes.io/managed-by: agnosticd
+          demo.redhat.com/name: coo-incident-detection
+  loop:
+  - incident-simulator
+  - acme-5gc-edge
+  - tempo
+  - netobserv

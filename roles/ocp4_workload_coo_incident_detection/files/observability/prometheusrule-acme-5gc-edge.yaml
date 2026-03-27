@@ -1,0 +1,153 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: acme-5gc-edge-alerts
+  namespace: acme-5gc-edge
+  labels:
+    app.kubernetes.io/part-of: acme-5gc-edge-site
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+    - name: acme-5gc-edge.nrf
+      rules:
+        - alert: AcmeNRFDatabaseDown
+          expr: |
+            acme_5gc_edge_error_active{service="acme-nrf",error_type="db_connection_pool_exhausted"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-nrf
+          annotations:
+            summary: "ACME NRF database connection pool exhausted"
+            description: "The NRF database connection pool is exhausted. Service discovery for all network functions is unavailable. This is likely the root cause of cascading failures across the 5G Core edge site."
+            runbook_url: "https://example.com/runbooks/acme-nrf-database"
+
+        - alert: AcmeServiceDiscoveryUnavailable
+          expr: |
+            acme_5gc_edge_service_health{service="acme-nrf"} == 0
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-nrf
+          annotations:
+            summary: "ACME NRF service discovery unavailable"
+            description: "The Network Repository Function is degraded. All dependent network functions (AMF, SMF, UPF, Charging) will lose service discovery capability."
+            runbook_url: "https://example.com/runbooks/acme-nrf-discovery"
+
+    - name: acme-5gc-edge.amf
+      rules:
+        - alert: AcmeAMFRegistrationFailing
+          expr: |
+            acme_5gc_edge_error_active{service="acme-amf",error_type="subscriber_registration_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-amf
+          annotations:
+            summary: "ACME AMF subscriber registration failing"
+            description: "The Access & Mobility Management Function cannot register new subscribers. New UE attachments to the 5G network are being rejected."
+            runbook_url: "https://example.com/runbooks/acme-amf-registration"
+
+        - alert: AcmeAMFDependencyDown
+          expr: |
+            acme_5gc_edge_dependency_status{service="acme-amf",dependency="acme-nrf"} == 0
+          for: 0m
+          labels:
+            severity: warning
+            namespace: acme-5gc-edge
+            app: acme-amf
+          annotations:
+            summary: "ACME AMF lost connectivity to NRF"
+            description: "The AMF has lost its connection to the NRF service discovery endpoint. This will cause subscriber registration failures as the AMF cannot resolve dependent service endpoints."
+            runbook_url: "https://example.com/runbooks/acme-amf-nrf-dependency"
+
+    - name: acme-5gc-edge.smf
+      rules:
+        - alert: AcmeSMFSessionCreationFailing
+          expr: |
+            acme_5gc_edge_error_active{service="acme-smf",error_type="pdu_session_failure"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-smf
+          annotations:
+            summary: "ACME SMF PDU session creation failing"
+            description: "The Session Management Function cannot create new PDU sessions. Existing data sessions may continue but no new data connections can be established for subscribers."
+            runbook_url: "https://example.com/runbooks/acme-smf-session"
+
+        - alert: AcmeSMFPolicyError
+          expr: |
+            acme_5gc_edge_error_active{service="acme-smf",error_type="qos_policy_fetch_failed"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: acme-5gc-edge
+            app: acme-smf
+          annotations:
+            summary: "ACME SMF QoS policy fetch failed"
+            description: "The SMF cannot fetch QoS policies from the NRF. Quality of Service enforcement is degraded for all active and new sessions."
+            runbook_url: "https://example.com/runbooks/acme-smf-qos"
+
+    - name: acme-5gc-edge.upf
+      rules:
+        - alert: AcmeUPFPacketLoss
+          expr: |
+            acme_5gc_edge_error_active{service="acme-upf",error_type="packet_drops"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-upf
+          annotations:
+            summary: "ACME UPF dropping packets"
+            description: "The User Plane Function is actively dropping packets due to missing session context from SMF. End users are experiencing data connectivity loss."
+            runbook_url: "https://example.com/runbooks/acme-upf-packet-loss"
+
+        - alert: AcmeUPFSessionContextMissing
+          expr: |
+            acme_5gc_edge_dependency_status{service="acme-upf",dependency="acme-smf"} == 0
+          for: 0m
+          labels:
+            severity: warning
+            namespace: acme-5gc-edge
+            app: acme-upf
+          annotations:
+            summary: "ACME UPF lost connectivity to SMF"
+            description: "The UPF has lost its connection to the SMF. Without session context, the UPF cannot forward packets for subscriber sessions."
+            runbook_url: "https://example.com/runbooks/acme-upf-smf-dependency"
+
+    - name: acme-5gc-edge.charging
+      rules:
+        - alert: AcmeChargingCDRBacklog
+          expr: |
+            acme_5gc_edge_error_active{service="acme-charging-cdr",error_type="cdr_backlog"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: acme-5gc-edge
+            app: acme-charging-cdr
+          annotations:
+            summary: "ACME Charging CDR backlog growing"
+            description: "The Charging Data Records pipeline cannot correlate records to subscribers due to AMF unavailability. Unprocessed CDRs are accumulating, causing potential revenue leakage."
+            runbook_url: "https://example.com/runbooks/acme-charging-backlog"
+
+    - name: acme-5gc-edge.site
+      rules:
+        - alert: AcmeCoreEdgeSiteDegraded
+          expr: |
+            count(acme_5gc_edge_service_health == 0) >= 3
+          for: 0m
+          labels:
+            severity: critical
+            namespace: acme-5gc-edge
+            app: acme-5gc-edge-site
+          annotations:
+            summary: "ACME 5G Core edge site degraded - multiple NFs failing"
+            description: "{{ $value }} out of 5 network functions at the ACME 5G Core edge site are degraded. The site is experiencing a cascading failure. Investigate the NRF (Network Repository Function) as the likely root cause."
+            runbook_url: "https://example.com/runbooks/acme-ran-site-degraded"

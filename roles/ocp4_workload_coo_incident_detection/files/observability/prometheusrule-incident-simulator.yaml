@@ -1,0 +1,39 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-simulator-alerts
+  namespace: incident-simulator
+  labels:
+    app.kubernetes.io/part-of: incident-simulator
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+    - name: incident-simulator.high-cpu-memory
+      rules:
+        - alert: IncidentSimulatorHighMemory
+          expr: |
+            incident_simulator_active_incidents{type="memory_leak"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "High memory usage detected"
+            description: "Simulated memory issue is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-memory"
+
+        - alert: IncidentSimulatorHighCPU
+          expr: |
+            incident_simulator_active_incidents{type="cpu_saturation"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            namespace: incident-simulator
+            app: incident-simulator
+          annotations:
+            summary: "High CPU usage detected"
+            description: "Simulated CPU saturation is active"
+            runbook_url: "https://example.com/runbooks/incident-simulator-cpu"

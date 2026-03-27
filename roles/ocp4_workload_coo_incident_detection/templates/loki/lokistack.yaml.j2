@@ -1,0 +1,17 @@
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logging-loki
+  namespace: openshift-logging
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  size: 1x.demo
+  storage:
+    secret:
+      name: logging-loki-s3
+      type: s3
+  storageClassName: "{{ ocp4_workload_coo_incident_detection_storage_class }}"
+  tenants:
+    mode: openshift-logging
