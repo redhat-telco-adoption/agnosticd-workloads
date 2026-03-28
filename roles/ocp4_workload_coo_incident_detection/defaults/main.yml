@@ -31,9 +31,10 @@ ocp4_workload_coo_incident_detection_llm_model: llama-scout-17b
 ocp4_workload_coo_incident_detection_llm_provider_name: LiteLLM
 
 # ── Demo User ─────────────────────────────────────────────────────────────────
-# Username for the demo attendee. Must match the user created by
+# Username and password for the demo attendee. Must match the user created by
 # ocp4_workload_authentication_htpasswd (used only for RBAC binding names).
 ocp4_workload_coo_incident_detection_demo_user_name: noc-intern
+ocp4_workload_coo_incident_detection_demo_user_password: ""
 
 # ── Application Images ────────────────────────────────────────────────────────
 # Image tag for the incident-simulator application images.
