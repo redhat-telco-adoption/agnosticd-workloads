@@ -32,6 +32,7 @@ This demo showcases the Cluster Observability Operator (COO) incident detection 
 |---|---|
 | `incident-simulator` | frontend, backend-api, worker (3-tier incident simulator) |
 | `acme-5gc-edge` | NRF, AMF, SMF, UPF, Charging CDR (simulated 5G core edge site) |
+| `5g-noc` | 5G NOC Dashboard (edge site health, failure cascade, active faults, business impact) |
 
 ### Observability
 
@@ -78,9 +79,14 @@ This demo showcases the Cluster Observability Operator (COO) incident detection 
 | `ocp4_workload_coo_incident_detection_llm_model` | `llama-scout-17b` | LLM model name |
 | `ocp4_workload_coo_incident_detection_llm_provider_name` | `LiteLLM` | Lightspeed provider display name |
 | `ocp4_workload_coo_incident_detection_demo_user_name` | `noc-intern` | Demo user username |
-| `ocp4_workload_coo_incident_detection_demo_user_password` | `R3dH4t1!` | Demo user password |
+| `ocp4_workload_coo_incident_detection_demo_user_password` | `""` | Demo user password (must match the user created by `ocp4_workload_authentication_htpasswd`) |
+| `ocp4_workload_coo_incident_detection_slack_webhook_url` | `""` | Optional Slack incoming webhook for Alertmanager notifications |
 | `ocp4_workload_coo_incident_detection_app_image_tag` | `latest` | Image tag for incident-simulator containers |
 | `ocp4_workload_coo_incident_detection_alert_silence_duration_hours` | `168` | Duration (hours) for Alertmanager silences |
+
+## Demo Walkthrough
+
+See [WALKTHROUGH.md](WALKTHROUGH.md) for the full demo narrative, pre-demo checklist, and stage-by-stage presenter guide.
 
 ## Usage
 
@@ -125,6 +131,7 @@ Total provision time is approximately 45-60 minutes:
 The workload info task reports via `agnosticd_user_info`:
 
 - Incident Simulator URL
+- 5G NOC Dashboard URL (route `dashboard` in `5g-noc` namespace)
 - OpenShift Console URL
 - Demo user credentials
 - Direct links to Observe > Incidents and Observe > Logs views
