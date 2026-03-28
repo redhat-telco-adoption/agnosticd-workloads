@@ -1,0 +1,19 @@
+---
+- name: Deploy 5G NOC dashboard
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/dashboard/dashboard.yaml"
+
+- name: Wait for dashboard deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: dashboard
+    namespace: 5g-noc
+  register: r_dashboard
+  retries: 30
+  delay: 10
+  until:
+  - r_dashboard.resources | length == 1
+  - r_dashboard.resources[0].status.readyReplicas is defined
+  - r_dashboard.resources[0].status.readyReplicas >= 1

@@ -42,6 +42,9 @@
 - name: Deploy demo applications
   ansible.builtin.include_tasks: applications.yml
 
+- name: Deploy 5G NOC dashboard
+  ansible.builtin.include_tasks: dashboard.yml
+
 - name: Configure observability resources (ServiceMonitors + PrometheusRules)
   ansible.builtin.include_tasks: observability_resources.yml
 

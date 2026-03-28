@@ -1,0 +1,90 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 5g-noc
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: 5g-noc
+  labels:
+    app: dashboard
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: quay.io/redhat-telco-adoption/5g-noc-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: 5g-noc
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dashboard
+  namespace: 5g-noc
+  labels:
+    demo.redhat.com/name: coo-incident-detection
+    demo.redhat.com/created-by: agnosticd
+spec:
+  to:
+    kind: Service
+    name: dashboard
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
