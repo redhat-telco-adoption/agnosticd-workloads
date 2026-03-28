@@ -90,27 +90,47 @@ See [WALKTHROUGH.md](WALKTHROUGH.md) for the full demo narrative, pre-demo check
 
 ## Usage
 
-### Provision
+This role is deployed using [AgnosticDv2](https://github.com/agnosticd/agnosticd-v2), a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the [AgnosticDv2 setup guide](https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc) to install the framework and configure your environment before running this role.
+
+### Sample vars file
+
+Create a vars file (e.g. `my_vars.yml`) with the following — replace all placeholder values:
 
 ```yaml
-- hosts: localhost
-  gather_facts: false
-  roles:
-    - role: ocp4_workload_coo_incident_detection
-  vars:
-    ACTION: provision
-    ocp4_workload_coo_incident_detection_llm_api_token: "your-api-token-here"
+# --- AgnosticDv2 connection ---
+# Target cluster kubeconfig or credentials are handled by AgnosticDv2.
+# Set these in your AgnosticDv2 environment config, not here.
+
+# --- Required ---
+ocp4_workload_coo_incident_detection_llm_api_token: "YOUR_LLM_API_TOKEN"
+
+# --- Demo user (must match ocp4_workload_authentication_htpasswd) ---
+ocp4_workload_coo_incident_detection_demo_user_name: "noc-intern"
+ocp4_workload_coo_incident_detection_demo_user_password: "YOUR_DEMO_USER_PASSWORD"
+
+# --- Optional: Slack alerting ---
+# ocp4_workload_coo_incident_detection_slack_webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# --- Optional: LLM provider (defaults point to LiteLLM gateway) ---
+# ocp4_workload_coo_incident_detection_llm_api_url: "https://litellm-prod.apps.maas.redhatworkshops.io/v1"
+# ocp4_workload_coo_incident_detection_llm_model: "llama-scout-17b"
+
+# --- Optional: Storage (default gp3-csi works for AWS clusters) ---
+# ocp4_workload_coo_incident_detection_storage_class: "gp3-csi"
+```
+
+### Provision
+
+```bash
+agnosticd deploy --vars my_vars.yml --action provision \
+  --workload ocp4_workload_coo_incident_detection
 ```
 
 ### Destroy
 
-```yaml
-- hosts: localhost
-  gather_facts: false
-  roles:
-    - role: ocp4_workload_coo_incident_detection
-  vars:
-    ACTION: destroy
+```bash
+agnosticd deploy --vars my_vars.yml --action destroy \
+  --workload ocp4_workload_coo_incident_detection
 ```
 
 ## Provision Timing
