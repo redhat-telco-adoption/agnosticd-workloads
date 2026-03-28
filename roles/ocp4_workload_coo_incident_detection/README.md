@@ -90,47 +90,76 @@ See [WALKTHROUGH.md](WALKTHROUGH.md) for the full demo narrative, pre-demo check
 
 ## Usage
 
-This role is deployed using [AgnosticDv2](https://github.com/agnosticd/agnosticd-v2), a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the [AgnosticDv2 setup guide](https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc) to install the framework and configure your environment before running this role.
+This role is deployed using [AgnosticDv2](https://github.com/agnosticd/agnosticd-v2), a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the [AgnosticDv2 setup guide](https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc) to install the `agd` CLI and configure secrets before running this role.
+
+### Base environment
+
+This demo has been tested against the **AWS with OpenShift Open Environment** on the [Red Hat Demo Platform](https://catalog.demo.redhat.com/catalog?item=babylon-catalog-prod/sandboxes-gpte.sandbox-ocp.prod). It will need adaptation (storage class, cluster credentials) if deployed against a different base environment.
 
 ### Sample vars file
 
-Create a vars file (e.g. `my_vars.yml`) with the following — replace all placeholder values:
+Create a vars file (e.g. `agnosticd-v2-vars/openshift-workloads-coo.yml`). The `openshift-workloads` config deploys workloads listed under `workloads:` in sequence to the target cluster. Both `ocp4_workload_authentication_htpasswd` (creates users) and this role must be included — the demo user password is managed by the htpasswd workload.
 
 ```yaml
-# --- AgnosticDv2 connection ---
-# Target cluster kubeconfig or credentials are handled by AgnosticDv2.
-# Set these in your AgnosticDv2 environment config, not here.
+tag: main
+cloud_provider: none
+config: openshift-workloads
 
-# --- Required ---
+requirements_content:
+  collections:
+  - name: https://github.com/agnosticd/core_workloads.git
+    type: git
+    version: "{{ tag }}"
+  - name: https://github.com/redhat-telco-adoption/agnosticd-workloads.git
+    type: git
+    version: "{{ tag }}"
+
+clusters:
+- default:
+    api_url: "{{ cluster1.sandbox_openshift_api_url }}"
+    api_token: "{{ cluster1.sandbox_openshift_api_token }}"
+
+workloads:
+- agnosticd.core_workloads.ocp4_workload_authentication_htpasswd
+- redhat_telco_adoption.agnosticd.ocp4_workload_coo_incident_detection
+
+# -------------------------------------------------------------------
+# ocp4_workload_authentication_htpasswd
+# -------------------------------------------------------------------
+ocp4_workload_authentication_htpasswd_admin_user: admin
+ocp4_workload_authentication_htpasswd_admin_password: "YOUR_ADMIN_PASSWORD"
+ocp4_workload_authentication_htpasswd_user_count: 0
+ocp4_workload_authentication_htpasswd_named_users:
+- name: noc-intern
+  password: "YOUR_NOC_INTERN_PASSWORD"
+
+# -------------------------------------------------------------------
+# ocp4_workload_coo_incident_detection
+# -------------------------------------------------------------------
 ocp4_workload_coo_incident_detection_llm_api_token: "YOUR_LLM_API_TOKEN"
+ocp4_workload_coo_incident_detection_demo_user_name: noc-intern
 
-# --- Demo user (must match ocp4_workload_authentication_htpasswd) ---
-ocp4_workload_coo_incident_detection_demo_user_name: "noc-intern"
-ocp4_workload_coo_incident_detection_demo_user_password: "YOUR_DEMO_USER_PASSWORD"
-
-# --- Optional: Slack alerting ---
+# Optional: Slack incoming webhook for Alertmanager notifications
 # ocp4_workload_coo_incident_detection_slack_webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
-# --- Optional: LLM provider (defaults point to LiteLLM gateway) ---
+# Optional: override LLM provider (defaults shown)
 # ocp4_workload_coo_incident_detection_llm_api_url: "https://litellm-prod.apps.maas.redhatworkshops.io/v1"
-# ocp4_workload_coo_incident_detection_llm_model: "llama-scout-17b"
+# ocp4_workload_coo_incident_detection_llm_model: llama-scout-17b
 
-# --- Optional: Storage (default gp3-csi works for AWS clusters) ---
-# ocp4_workload_coo_incident_detection_storage_class: "gp3-csi"
+# Optional: override storage class (default gp3-csi is correct for AWS)
+# ocp4_workload_coo_incident_detection_storage_class: gp3-csi
 ```
 
 ### Provision
 
 ```bash
-agnosticd deploy --vars my_vars.yml --action provision \
-  --workload ocp4_workload_coo_incident_detection
+./bin/agd provision --guid <your-guid> --config openshift-workloads-coo --account <your-account>
 ```
 
 ### Destroy
 
 ```bash
-agnosticd deploy --vars my_vars.yml --action destroy \
-  --workload ocp4_workload_coo_incident_detection
+./bin/agd destroy --guid <your-guid> --config openshift-workloads-coo --account <your-account>
 ```
 
 ## Provision Timing
