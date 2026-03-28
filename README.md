@@ -31,6 +31,7 @@ AgnosticD framework.
 | Workload Role                                                                                              | Description                                                                                                            |
 |------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | [`ocp4_workload_ocp_troubleshooting_workshop`](roles/ocp4_workload_ocp_troubleshooting_workshop/README.md) | Deploys the OpenShift Troubleshooting Workshop — per-attendee namespaces with 19 broken lab scenarios across 6 modules |
+| [`ocp4_workload_coo_incident_detection`](roles/ocp4_workload_coo_incident_detection/README.md) | Deploys the COO Incident Detection Demo — full observability stack (Loki, Tempo, NetObserv, Lightspeed) with a simulated 5G Core edge site and 7-stage presenter walkthrough |
 
 ## Usage with AgnosticD V2
 
@@ -44,5 +45,5 @@ workloads:
 Then provision with:
 
 ```bash
-agd provision
+./bin/agd provision --guid <your-guid> --config <config-name> --account <your-account>
 ```
