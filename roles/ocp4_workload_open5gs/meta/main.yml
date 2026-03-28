@@ -8,7 +8,7 @@ galaxy_info:
     Installs OpenShift Logging + Loki operators as prerequisites, then
     bootstraps the 5g-demo ArgoCD AppProject and root Application.
     Requires OpenShift GitOps to be installed before this workload runs.
-  license: GPL-2.0-or-later
+  license: MIT
   min_ansible_version: "2.9"
   platforms: []
   galaxy_tags:

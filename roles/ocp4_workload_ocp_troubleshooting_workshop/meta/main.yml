@@ -7,7 +7,7 @@ galaxy_info:
     Provisions per-attendee namespaces, HTPasswd identity provider, and 19 broken
     lab scenarios covering configuration, storage, security, networking, resources,
     and lifecycle failure modes.
-  license: Apache-2.0
+  license: MIT
   min_ansible_version: "2.9"
   platforms: []
   galaxy_tags:

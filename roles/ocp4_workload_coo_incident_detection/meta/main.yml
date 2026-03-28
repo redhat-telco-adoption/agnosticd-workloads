@@ -7,7 +7,7 @@ galaxy_info:
     Provisions a 5G NOC observability environment with Loki logging,
     COO UIPlugins for incident detection, OpenShift Lightspeed with MCP
     integration, and a demo application (incident-simulator + acme-5gc-edge).
-  license: Apache-2.0
+  license: MIT
   min_ansible_version: "2.9"
   platforms: []
   galaxy_tags:
