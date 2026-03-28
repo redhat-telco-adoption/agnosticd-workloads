@@ -24,7 +24,7 @@ AgnosticD framework.
 | Namespace | `redhat_telco_adoption` |
 | Name      | `agnosticd`             |
 | Version   | `1.0.0`                 |
-| License   | `GPL-2.0-or-later`      |
+| License   | `MIT`                   |
 
 ## Available Workloads
 
