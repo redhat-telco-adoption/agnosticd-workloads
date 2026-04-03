@@ -25,3 +25,7 @@
 - name: Configure DataSciencePipelineApplication
   when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
   ansible.builtin.include_tasks: pipeline_app.yml
+
+- name: Deploy model via InferenceService
+  when: ocp4_workload_rhoai3x_model_deploy | bool
+  ansible.builtin.include_tasks: model_deployment.yml

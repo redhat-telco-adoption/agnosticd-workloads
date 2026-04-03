@@ -1,0 +1,105 @@
+---
+# ---------------------------------------------------------------------------
+# Model deployment via KServe InferenceService
+# Deploys a vLLM-based model using a ServingRuntime + InferenceService.
+# Defaults to gpt-oss-20b but any vLLM-compatible storageUri works.
+#
+# The ServingRuntime (vLLM + CUDA) is created once per namespace.
+# The InferenceService is the model-specific resource.
+# ---------------------------------------------------------------------------
+
+- name: Create ServingRuntime for vLLM NVIDIA GPU
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: serving.kserve.io/v1alpha1
+      kind: ServingRuntime
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_model_serving_runtime_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+        annotations:
+          openshift.io/display-name: vLLM NVIDIA GPU ServingRuntime for KServe
+          opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+        labels:
+          opendatahub.io/dashboard: "true"
+      spec:
+        annotations:
+          prometheus.io/port: "8080"
+          prometheus.io/path: /metrics
+        multiModel: false
+        supportedModelFormats:
+        - autoSelect: true
+          name: vLLM
+        containers:
+        - name: kserve-container
+          image: "{{ ocp4_workload_rhoai3x_model_serving_runtime_image }}"
+          command:
+          - python
+          - -m
+          - vllm.entrypoints.openai.api_server
+          args: >-
+            {{ ['--port=8080', '--model=/mnt/models',
+                '--served-model-name=' ~ ocp4_workload_rhoai3x_model_name]
+               + ocp4_workload_rhoai3x_model_extra_args }}
+          env:
+          - name: HF_HOME
+            value: /tmp/hf_home
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+
+- name: Create InferenceService for {{ ocp4_workload_rhoai3x_model_name }}
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: serving.kserve.io/v1beta1
+      kind: InferenceService
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_model_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+        annotations:
+          openshift.io/display-name: "{{ ocp4_workload_rhoai3x_model_display_name }}"
+          serving.kserve.io/deploymentMode: RawDeployment
+        labels:
+          opendatahub.io/dashboard: "true"
+      spec:
+        predictor:
+          minReplicas: "{{ ocp4_workload_rhoai3x_model_min_replicas | int }}"
+          maxReplicas: "{{ ocp4_workload_rhoai3x_model_max_replicas | int }}"
+          model:
+            modelFormat:
+              name: vLLM
+            name: ""
+            runtime: "{{ ocp4_workload_rhoai3x_model_serving_runtime_name }}"
+            storageUri: "{{ ocp4_workload_rhoai3x_model_storage_uri }}"
+            resources:
+              requests:
+                cpu: "{{ ocp4_workload_rhoai3x_model_cpu_requests }}"
+                memory: "{{ ocp4_workload_rhoai3x_model_memory_requests }}"
+                nvidia.com/gpu: "{{ ocp4_workload_rhoai3x_model_gpu_count }}"
+              limits:
+                cpu: "{{ ocp4_workload_rhoai3x_model_cpu_limits }}"
+                memory: "{{ ocp4_workload_rhoai3x_model_memory_limits }}"
+                nvidia.com/gpu: "{{ ocp4_workload_rhoai3x_model_gpu_count }}"
+          tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+
+- name: Wait for InferenceService to become Ready
+  when: ocp4_workload_rhoai3x_model_wait_ready | bool
+  kubernetes.core.k8s_info:
+    api_version: serving.kserve.io/v1beta1
+    kind: InferenceService
+    name: "{{ ocp4_workload_rhoai3x_model_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+  register: _ocp4_workload_rhoai3x_isvc_status
+  until: >-
+    _ocp4_workload_rhoai3x_isvc_status.resources | length > 0
+    and (_ocp4_workload_rhoai3x_isvc_status.resources[0].status.conditions
+         | default([])
+         | selectattr('type', 'equalto', 'Ready')
+         | selectattr('status', 'equalto', 'True')
+         | list | length) > 0
+  retries: "{{ ocp4_workload_rhoai3x_model_ready_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_model_ready_delay }}"

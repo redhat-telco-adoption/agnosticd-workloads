@@ -3,6 +3,25 @@
 # Deprovision — reverse order of workload.yml
 # ---------------------------------------------------------------------------
 
+# 0. InferenceService and ServingRuntime
+- name: Remove InferenceService
+  when: ocp4_workload_rhoai3x_model_deploy | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: serving.kserve.io/v1beta1
+    kind: InferenceService
+    name: "{{ ocp4_workload_rhoai3x_model_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
+- name: Remove ServingRuntime
+  when: ocp4_workload_rhoai3x_model_deploy | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: serving.kserve.io/v1alpha1
+    kind: ServingRuntime
+    name: "{{ ocp4_workload_rhoai3x_model_serving_runtime_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
 # 1. DataSciencePipelineApplication
 - name: Remove DataSciencePipelineApplication
   when: ocp4_workload_rhoai3x_pipeline_app_configure | bool

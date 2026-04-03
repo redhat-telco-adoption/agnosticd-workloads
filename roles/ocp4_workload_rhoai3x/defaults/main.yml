@@ -106,3 +106,49 @@ ocp4_workload_rhoai3x_pipeline_minio_endpoint: "http://minio.minio.svc.cluster.l
 ocp4_workload_rhoai3x_pipeline_minio_bucket: "rhoai-pipelines"
 ocp4_workload_rhoai3x_pipeline_minio_access_key: "minio"
 ocp4_workload_rhoai3x_pipeline_minio_secret_key: "minio123"
+
+# ---------------------------------------------------------------------------
+# Model deployment via KServe InferenceService
+# Default: gpt-oss-20b from the Red Hat model registry (OCI ModelCar image).
+# Override ocp4_workload_rhoai3x_model_name and ocp4_workload_rhoai3x_model_storage_uri
+# to deploy any other vLLM-compatible model.
+# ---------------------------------------------------------------------------
+
+# Set to false to skip model deployment entirely
+ocp4_workload_rhoai3x_model_deploy: true
+
+# Namespace to deploy the model into — must be a Data Science Project
+# Defaults to the shared pipeline project created by pipeline_app.yml
+ocp4_workload_rhoai3x_model_namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+
+# Model identity
+ocp4_workload_rhoai3x_model_name: "gpt-oss-20b"
+ocp4_workload_rhoai3x_model_display_name: "gpt-oss-20b"
+
+# Storage URI — OCI ModelCar (registry.redhat.io), S3 (s3://), or HuggingFace (hf://)
+ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5"
+
+# ServingRuntime — shared across models in the same namespace
+ocp4_workload_rhoai3x_model_serving_runtime_name: "vllm-cuda-runtime"
+ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
+
+# Additional vLLM CLI args appended after --port, --model, --served-model-name
+# Example: ["--tensor-parallel-size=2", "--max-model-len=8192"]
+ocp4_workload_rhoai3x_model_extra_args: []
+
+# GPU and compute resources
+ocp4_workload_rhoai3x_model_gpu_count: "1"
+ocp4_workload_rhoai3x_model_cpu_requests: "1"
+ocp4_workload_rhoai3x_model_cpu_limits: "2"
+ocp4_workload_rhoai3x_model_memory_requests: "4Gi"
+ocp4_workload_rhoai3x_model_memory_limits: "8Gi"
+
+# Replica bounds
+ocp4_workload_rhoai3x_model_min_replicas: 1
+ocp4_workload_rhoai3x_model_max_replicas: 1
+
+# Wait for InferenceService Ready before proceeding
+# Set to false to fire-and-forget (large models can take 20+ minutes to load)
+ocp4_workload_rhoai3x_model_wait_ready: true
+ocp4_workload_rhoai3x_model_ready_retries: 60
+ocp4_workload_rhoai3x_model_ready_delay: 30
