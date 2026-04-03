@@ -143,7 +143,7 @@
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
   kubernetes.core.k8s:
     state: absent
-    api_version: nfd.kubernetes.io/v1
+    api_version: nfd.openshift.io/v1
     kind: NodeFeatureDiscovery
     name: "{{ ocp4_workload_rhoai3x_nfd_instance_name }}"
     namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
