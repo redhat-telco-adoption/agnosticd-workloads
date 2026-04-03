@@ -54,6 +54,32 @@
           trainingoperator:
             managementState: Removed
 
+- name: Enable Gen AI Studio feature flag in OdhDashboardConfig
+  when: ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  kubernetes.core.k8s:
+    state: patched
+    api_version: opendatahub.io/v1alpha
+    kind: OdhDashboardConfig
+    name: odh-dashboard-config
+    namespace: redhat-ods-applications
+    definition:
+      spec:
+        dashboardConfig:
+          genAiStudio: true
+
+- name: Restart RHOAI dashboard to pick up genAiStudio flag
+  when: ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: rhods-dashboard
+        namespace: redhat-ods-applications
+        annotations:
+          kubectl.kubernetes.io/restartedAt: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+
 - name: Wait for DataScienceCluster to reach Ready phase
   kubernetes.core.k8s_info:
     api_version: datasciencecluster.opendatahub.io/v2

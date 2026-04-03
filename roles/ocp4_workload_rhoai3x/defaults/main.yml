@@ -100,6 +100,11 @@ ocp4_workload_rhoai3x_kserve_models_as_service_management_state: "Removed"
 # rawDeploymentServiceConfig: Headless = RawDeployment mode (no Service Mesh / Serverless)
 ocp4_workload_rhoai3x_kserve_raw_deployment_service_config: "Headless"
 
+# Set to true to enable the Gen AI Studio (Playground) Tech Preview feature.
+# Requires llamastackoperator: Managed in the DSC (already set above).
+# Patches OdhDashboardConfig and restarts the dashboard deployment.
+ocp4_workload_rhoai3x_gen_ai_studio_enable: true
+
 # Retries / delay for waiting on DataScienceCluster Ready status
 ocp4_workload_rhoai3x_dsc_wait_retries: 30
 ocp4_workload_rhoai3x_dsc_wait_delay: 20
