@@ -64,6 +64,11 @@
                  }) }}
           spec: >-
             {{ _ocp4_workload_rhoai3x_source_ms.spec.template.spec | combine({
+                 'metadata': {
+                   'labels': (_ocp4_workload_rhoai3x_source_ms.spec.template.spec.metadata.labels | default({})) | combine({
+                     'node-role.kubernetes.io/gpu': ''
+                   })
+                 },
                  'providerSpec': {
                    'value': _ocp4_workload_rhoai3x_source_ms.spec.template.spec.providerSpec.value | combine({
                      'instanceType': ocp4_workload_rhoai3x_gpu_instance_type
@@ -89,3 +94,25 @@
         >= (ocp4_workload_rhoai3x_gpu_node_count | int)
   retries: "{{ ocp4_workload_rhoai3x_gpu_node_ready_retries }}"
   delay: "{{ ocp4_workload_rhoai3x_gpu_node_ready_delay }}"
+
+- name: Get Machines in GPU MachineSet to find node names
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: Machine
+    namespace: openshift-machine-api
+    label_selectors:
+    - "machine.openshift.io/cluster-api-machineset={{ _ocp4_workload_rhoai3x_gpu_ms_name }}"
+  register: _ocp4_workload_rhoai3x_gpu_machines
+
+- name: Label GPU nodes with node-role.kubernetes.io/gpu
+  kubernetes.core.k8s:
+    state: patched
+    api_version: v1
+    kind: Node
+    name: "{{ item.status.nodeRef.name }}"
+    definition:
+      metadata:
+        labels:
+          node-role.kubernetes.io/gpu: ""
+  loop: "{{ _ocp4_workload_rhoai3x_gpu_machines.resources }}"
+  when: item.status.nodeRef is defined
