@@ -92,6 +92,9 @@
         daemonsets: {}
         driver:
           enabled: true
+          version: "{{ ocp4_workload_rhoai3x_nvidia_driver_version }}"
+          repository: "{{ ocp4_workload_rhoai3x_nvidia_driver_repository }}"
+          image: "{{ ocp4_workload_rhoai3x_nvidia_driver_image }}"
         toolkit:
           enabled: true
         devicePlugin:

@@ -63,6 +63,14 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
 ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries: 30
 ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay: 20
 
+# NVIDIA driver version deployed via ClusterPolicy.
+# Must be compatible with the CUDA version required by the vLLM serving image.
+# rhaiis/vllm-cuda-rhel9 (PyTorch 2.9.0) requires CUDA 12.6+ (driver 560+).
+# Available tags: https://catalog.redhat.com/en/software/containers/rhoai/odh-vllm-cuda-rhel9/68af11f5fad01b87e349f2fa
+ocp4_workload_rhoai3x_nvidia_driver_version: "580.126.20"
+ocp4_workload_rhoai3x_nvidia_driver_repository: "nvcr.io/nvidia"
+ocp4_workload_rhoai3x_nvidia_driver_image: "driver"
+
 # ---------------------------------------------------------------------------
 # RHOAI Operator
 # Installed via OLM from the redhat-operators catalog.
