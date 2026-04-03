@@ -66,7 +66,8 @@
             {{ _ocp4_workload_rhoai3x_source_ms.spec.template.spec | combine({
                  'metadata': {
                    'labels': (_ocp4_workload_rhoai3x_source_ms.spec.template.spec.metadata.labels | default({})) | combine({
-                     'node-role.kubernetes.io/gpu': ''
+                     'node-role.kubernetes.io/gpu': '',
+                     'feature.node.kubernetes.io/pci-10de.present': 'true'
                    })
                  },
                  'providerSpec': {
