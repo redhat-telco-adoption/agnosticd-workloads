@@ -119,6 +119,13 @@
     kind: Namespace
     name: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
 
+- name: Remove redhat-ods-applications namespace (auto-created by RHOAI operator)
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: redhat-ods-applications
+
 # 5. NVIDIA GPU Operator
 - name: Remove NVIDIA GPU Operator resources
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
@@ -129,6 +136,16 @@
       api_version: nvidia.com/v1
       kind: ClusterPolicy
       name: gpu-cluster-policy
+
+  - name: Wait for ClusterPolicy to be deleted
+    kubernetes.core.k8s_info:
+      api_version: nvidia.com/v1
+      kind: ClusterPolicy
+      name: gpu-cluster-policy
+    register: _ocp4_workload_rhoai3x_cluster_policy_deleted
+    until: _ocp4_workload_rhoai3x_cluster_policy_deleted.resources | length == 0
+    retries: 20
+    delay: 15
 
   - name: Remove NVIDIA GPU Operator Subscription
     kubernetes.core.k8s:
@@ -183,14 +200,19 @@
 - name: Remove GPU MachineSet
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
   block:
-  - name: Get GPU MachineSet name
+  - name: Get all MachineSets to find GPU MachineSet by name suffix
     kubernetes.core.k8s_info:
       api_version: machine.openshift.io/v1beta1
       kind: MachineSet
       namespace: openshift-machine-api
-      label_selectors:
-      - "node-role.kubernetes.io/gpu="
-    register: _ocp4_workload_rhoai3x_gpu_ms_list
+    register: _ocp4_workload_rhoai3x_gpu_ms_all
+
+  - name: Filter GPU MachineSets by name suffix
+    ansible.builtin.set_fact:
+      _ocp4_workload_rhoai3x_gpu_ms_list:
+        resources: >-
+          {{ _ocp4_workload_rhoai3x_gpu_ms_all.resources |
+             selectattr('metadata.name', 'search', ocp4_workload_rhoai3x_gpu_machineset_name_suffix) | list }}
 
   - name: Scale GPU MachineSet to 0 replicas
     kubernetes.core.k8s:
