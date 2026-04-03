@@ -24,9 +24,7 @@
       metadata:
         name: rhods-operator
         namespace: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
-      spec:
-        targetNamespaces:
-        - "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+      spec: {}  # AllNamespaces mode — OwnNamespace/SingleNamespace not supported by RHOAI
 
 - name: Create Subscription for RHOAI Operator
   kubernetes.core.k8s:
