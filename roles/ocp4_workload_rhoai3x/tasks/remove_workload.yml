@@ -133,6 +133,13 @@
     kind: Namespace
     name: rhods-notebooks
 
+- name: Remove redhat-ods-monitoring namespace (auto-created by RHOAI operator)
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: redhat-ods-monitoring
+
 # 5. NVIDIA GPU Operator
 - name: Remove NVIDIA GPU Operator resources
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
@@ -283,7 +290,7 @@
   kubernetes.core.k8s_info:
     api_version: operators.coreos.com/v1alpha1
     kind: Subscription
-    name: servicemeshoperator
+    name: servicemeshoperator3
     namespace: openshift-operators
   register: _ocp4_workload_rhoai3x_sm_sub
 
@@ -303,5 +310,5 @@
     state: absent
     api_version: operators.coreos.com/v1alpha1
     kind: Subscription
-    name: servicemeshoperator
+    name: servicemeshoperator3
     namespace: openshift-operators
