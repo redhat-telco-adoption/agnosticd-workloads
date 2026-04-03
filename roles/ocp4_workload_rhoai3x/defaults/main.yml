@@ -80,10 +80,11 @@ ocp4_workload_rhoai3x_operator_csv_wait_delay: 20
 # Name of the DataScienceCluster CR
 ocp4_workload_rhoai3x_dsc_name: "default-dsc"
 
-# KServe serving configuration
-# Unmanaged + RawDeployment avoids Service Mesh / Serverless dependencies (RHOAI 3.x)
-ocp4_workload_rhoai3x_kserve_serving_management_state: "Unmanaged"
-ocp4_workload_rhoai3x_kserve_deployment_mode: "RawDeployment"
+# KServe serving configuration (DSC v2 field names)
+# modelsAsService = ModelMesh-based serving; Removed = KServe-only mode
+ocp4_workload_rhoai3x_kserve_models_as_service_management_state: "Removed"
+# rawDeploymentServiceConfig: Headless = RawDeployment mode (no Service Mesh / Serverless)
+ocp4_workload_rhoai3x_kserve_raw_deployment_service_config: "Headless"
 
 # Retries / delay for waiting on DataScienceCluster Ready status
 ocp4_workload_rhoai3x_dsc_wait_retries: 30

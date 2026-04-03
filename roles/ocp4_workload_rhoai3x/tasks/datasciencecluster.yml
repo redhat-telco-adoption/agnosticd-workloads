@@ -1,9 +1,14 @@
 ---
 # ---------------------------------------------------------------------------
-# DataScienceCluster CR
-# Enables: Dashboard, Workbenches, KServe (RawDeployment), AI Pipelines,
-#          LlamaStack Operator.
+# DataScienceCluster CR (DSC v2 — datasciencecluster.opendatahub.io/v2)
+# Enables: Dashboard, Workbenches, KServe (RawDeployment/Headless),
+#          AI Pipelines (aipipelines), LlamaStack Operator.
 # Requires: RHOAI Operator CSV Succeeded (rhoai_operator.yml).
+#
+# v2 field changes from v1:
+#   datasciencepipelines → aipipelines
+#   kserve.serving       → kserve.modelsAsService
+#   kserve.defaultDeploymentMode: RawDeployment → kserve.rawDeploymentServiceConfig: Headless
 # ---------------------------------------------------------------------------
 
 - name: Wait for DataScienceCluster CRD to be established
@@ -35,25 +40,18 @@
             managementState: Managed
           workbenches:
             managementState: Managed
-          datasciencepipelines:
+          aipipelines:
             managementState: Managed
           kserve:
             managementState: Managed
-            serving:
-              managementState: "{{ ocp4_workload_rhoai3x_kserve_serving_management_state }}"
-              ingressGateway:
-                certificate:
-                  type: SelfSigned
-            defaultDeploymentMode: "{{ ocp4_workload_rhoai3x_kserve_deployment_mode }}"
+            modelsAsService:
+              managementState: "{{ ocp4_workload_rhoai3x_kserve_models_as_service_management_state }}"
+            rawDeploymentServiceConfig: "{{ ocp4_workload_rhoai3x_kserve_raw_deployment_service_config }}"
           llamastackoperator:
             managementState: Managed
-          modelmeshserving:
-            managementState: Removed
           ray:
             managementState: Removed
           trainingoperator:
-            managementState: Removed
-          codeflare:
             managementState: Removed
 
 - name: Wait for DataScienceCluster to reach Ready phase
