@@ -179,7 +179,7 @@
             - name: FMS_ORCHESTRATOR_URL
               value: http://localhost
             - name: VLLM_MAX_TOKENS
-              value: "{{ ocp4_workload_rhoai3x_gen_ai_playground_max_tokens }}"
+              value: "{{ ocp4_workload_rhoai3x_gen_ai_playground_max_tokens | string }}"
             - name: VLLM_API_TOKEN_1
               value: fake
             - name: LLAMA_STACK_CONFIG_DIR
