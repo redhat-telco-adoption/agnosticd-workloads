@@ -54,7 +54,7 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_install: true
 # OLM channel — verify with:
 #   oc get packagemanifest gpu-operator-certified -n openshift-marketplace \
 #     -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}'
-ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v26.3"
+ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v24.9"
 
 # Namespace where the GPU Operator is installed (cluster-scoped OperatorGroup)
 ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
