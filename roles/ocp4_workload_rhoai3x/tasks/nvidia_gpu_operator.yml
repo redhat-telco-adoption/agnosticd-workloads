@@ -43,10 +43,9 @@
         name: gpu-operator-certified
         source: certified-operators
         sourceNamespace: openshift-marketplace
-        installPlanApproval: Manual
-        startingCSV: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_starting_csv }}"
+        installPlanApproval: Automatic
 
-- name: Wait for NVIDIA GPU Operator InstallPlan to be created
+- name: Wait for NVIDIA GPU Operator Subscription to resolve a CSV
   kubernetes.core.k8s_info:
     api_version: operators.coreos.com/v1alpha1
     kind: Subscription
@@ -55,20 +54,9 @@
   register: _ocp4_workload_rhoai3x_nvidia_sub
   until: >-
     _ocp4_workload_rhoai3x_nvidia_sub.resources | length > 0
-    and _ocp4_workload_rhoai3x_nvidia_sub.resources[0].status.installplan is defined
+    and _ocp4_workload_rhoai3x_nvidia_sub.resources[0].status.currentCSV is defined
   retries: 20
   delay: 10
-
-- name: Approve NVIDIA GPU Operator InstallPlan
-  kubernetes.core.k8s:
-    state: patched
-    api_version: operators.coreos.com/v1
-    kind: InstallPlan
-    name: "{{ _ocp4_workload_rhoai3x_nvidia_sub.resources[0].status.installplan.name }}"
-    namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
-    definition:
-      spec:
-        approved: true
 
 - name: Store NVIDIA GPU Operator CSV name
   ansible.builtin.set_fact:
@@ -104,9 +92,6 @@
         daemonsets: {}
         driver:
           enabled: true
-          version: "{{ ocp4_workload_rhoai3x_nvidia_driver_version }}"
-          repository: "{{ ocp4_workload_rhoai3x_nvidia_driver_repository }}"
-          image: "{{ ocp4_workload_rhoai3x_nvidia_driver_image }}"
         toolkit:
           enabled: true
         devicePlugin:

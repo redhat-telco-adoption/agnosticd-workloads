@@ -54,8 +54,7 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_install: true
 # OLM channel — verify with:
 #   oc get packagemanifest gpu-operator-certified -n openshift-marketplace \
 #     -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}'
-ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v24.9"
-ocp4_workload_rhoai3x_nvidia_gpu_operator_starting_csv: "gpu-operator-certified.v24.9.2"
+ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "stable"
 
 # Namespace where the GPU Operator is installed (cluster-scoped OperatorGroup)
 ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
@@ -64,13 +63,10 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
 ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries: 30
 ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay: 20
 
-# NVIDIA driver version deployed via ClusterPolicy.
-# Must be compatible with the CUDA version required by the vLLM serving image.
-# rhaiis/vllm-cuda-rhel9 (PyTorch 2.9.0) requires CUDA 12.6+ (driver 560+).
-# Available tags: https://catalog.redhat.com/en/software/containers/rhoai/odh-vllm-cuda-rhel9/68af11f5fad01b87e349f2fa
-ocp4_workload_rhoai3x_nvidia_driver_version: "580.126.20"
-ocp4_workload_rhoai3x_nvidia_driver_repository: "nvcr.io/nvidia"
-ocp4_workload_rhoai3x_nvidia_driver_image: "driver"
+# NVIDIA driver version is managed automatically by the OCP Driver Toolkit (DTK).
+# Do NOT set driver.version/repository/image in ClusterPolicy when use_ocp_driver_toolkit: true —
+# doing so causes the GPU operator to reconcile the driver DaemonSet to a different
+# k8s-driver-manager version, triggering an uninstall_driver cycle that fails on OCP.
 
 # ---------------------------------------------------------------------------
 # RHOAI Operator
