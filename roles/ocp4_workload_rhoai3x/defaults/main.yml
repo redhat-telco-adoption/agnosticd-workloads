@@ -63,7 +63,7 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay: 20
 # ---------------------------------------------------------------------------
 
 # OLM channel for RHOAI 3.3
-ocp4_workload_rhoai3x_operator_channel: "fast-3.3"
+ocp4_workload_rhoai3x_operator_channel: "stable-3.3"
 
 # Namespace where the RHOAI operator is installed
 ocp4_workload_rhoai3x_operator_namespace: "redhat-ods-operator"
