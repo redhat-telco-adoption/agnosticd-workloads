@@ -53,6 +53,10 @@
             managementState: Removed
           trainingoperator:
             managementState: Removed
+          mlflowoperator:
+            managementState: Managed
+          modelregistry:
+            managementState: Managed
 
 - name: Enable Gen AI Studio feature flag in OdhDashboardConfig
   when: ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
