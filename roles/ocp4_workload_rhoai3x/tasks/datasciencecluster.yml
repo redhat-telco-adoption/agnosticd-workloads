@@ -70,7 +70,7 @@
 - name: Restart RHOAI dashboard to pick up genAiStudio flag
   when: ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
   kubernetes.core.k8s:
-    state: present
+    state: patched
     definition:
       apiVersion: apps/v1
       kind: Deployment
