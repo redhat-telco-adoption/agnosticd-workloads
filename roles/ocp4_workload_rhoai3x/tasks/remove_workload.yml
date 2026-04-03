@@ -193,7 +193,8 @@
       kind: Namespace
       name: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
 
-# 6. NodeFeatureDiscovery instance (operator itself was installed by Stage 1 — leave it)
+# 6. NodeFeatureDiscovery instance and operator
+# ocp4_workload_nfd remove_workload is a no-op upstream, so we own full NFD cleanup here
 - name: Remove NodeFeatureDiscovery instance
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
   kubernetes.core.k8s:
@@ -202,6 +203,26 @@
     kind: NodeFeatureDiscovery
     name: "{{ ocp4_workload_rhoai3x_nfd_instance_name }}"
     namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
+
+- name: Wait for NodeFeatureDiscovery instance to be deleted
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  kubernetes.core.k8s_info:
+    api_version: nfd.openshift.io/v1
+    kind: NodeFeatureDiscovery
+    name: "{{ ocp4_workload_rhoai3x_nfd_instance_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
+  register: _ocp4_workload_rhoai3x_nfd_deleted
+  until: _ocp4_workload_rhoai3x_nfd_deleted.resources | length == 0
+  retries: 20
+  delay: 15
+
+- name: Remove NFD operator namespace (cascades Subscription, CSV, OperatorGroup)
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
 
 # 7. GPU MachineSet — scale to 0 first, then delete
 - name: Remove GPU MachineSet
@@ -256,3 +277,31 @@
       name: "{{ item.metadata.name }}"
       namespace: openshift-machine-api
     loop: "{{ _ocp4_workload_rhoai3x_gpu_ms_list.resources }}"
+
+# 8. OpenShift Service Mesh Operator (auto-installed by RHOAI as a KServe dependency)
+- name: Get Service Mesh Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    name: servicemeshoperator
+    namespace: openshift-operators
+  register: _ocp4_workload_rhoai3x_sm_sub
+
+- name: Remove Service Mesh ClusterServiceVersion
+  when:
+  - _ocp4_workload_rhoai3x_sm_sub.resources | length > 0
+  - _ocp4_workload_rhoai3x_sm_sub.resources[0].status.currentCSV is defined
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    name: "{{ _ocp4_workload_rhoai3x_sm_sub.resources[0].status.currentCSV }}"
+    namespace: openshift-operators
+
+- name: Remove Service Mesh Subscription
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    name: servicemeshoperator
+    namespace: openshift-operators
