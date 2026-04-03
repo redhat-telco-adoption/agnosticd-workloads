@@ -139,8 +139,11 @@ ocp4_workload_rhoai3x_model_serving_runtime_name: "vllm-cuda-runtime"
 ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
 
 # Additional vLLM CLI args appended after --port, --model, --served-model-name
-# Example: ["--tensor-parallel-size=2", "--max-model-len=8192"]
-ocp4_workload_rhoai3x_model_extra_args: []
+# gpt-oss-20b:1.x uses mxfp4 quantization; vLLM calls this format "modelopt_fp4".
+# The --quantization override is required so vLLM recognises the weight format.
+# Example override: ["--tensor-parallel-size=2", "--max-model-len=8192"]
+ocp4_workload_rhoai3x_model_extra_args:
+- "--quantization=modelopt_fp4"
 
 # GPU and compute resources
 ocp4_workload_rhoai3x_model_gpu_count: "1"
