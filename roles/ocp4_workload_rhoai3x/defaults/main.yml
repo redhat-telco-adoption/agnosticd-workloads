@@ -102,8 +102,19 @@ ocp4_workload_rhoai3x_kserve_raw_deployment_service_config: "Headless"
 
 # Set to true to enable the Gen AI Studio (Playground) Tech Preview feature.
 # Requires llamastackoperator: Managed in the DSC (already set above).
-# Patches OdhDashboardConfig and restarts the dashboard deployment.
+# Patches OdhDashboardConfig, restarts the dashboard, and creates a
+# LlamaStackDistribution backed by the deployed model InferenceService.
 ocp4_workload_rhoai3x_gen_ai_studio_enable: true
+
+# LlamaStackDistribution name — appears in the Gen AI Studio project dropdown
+ocp4_workload_rhoai3x_gen_ai_playground_name: "lsd-genai-playground"
+
+# Max tokens passed to the vLLM provider in the LlamaStack config
+ocp4_workload_rhoai3x_gen_ai_playground_max_tokens: 4096
+
+# Wait for LlamaStackDistribution to reach Ready phase
+ocp4_workload_rhoai3x_gen_ai_playground_wait_retries: 20
+ocp4_workload_rhoai3x_gen_ai_playground_wait_delay: 15
 
 # Retries / delay for waiting on DataScienceCluster Ready status
 ocp4_workload_rhoai3x_dsc_wait_retries: 30

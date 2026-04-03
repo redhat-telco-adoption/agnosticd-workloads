@@ -29,3 +29,9 @@
 - name: Deploy model via InferenceService
   when: ocp4_workload_rhoai3x_model_deploy | bool
   ansible.builtin.include_tasks: model_deployment.yml
+
+- name: Configure Gen AI Playground (LlamaStackDistribution)
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  ansible.builtin.include_tasks: gen_ai_playground.yml

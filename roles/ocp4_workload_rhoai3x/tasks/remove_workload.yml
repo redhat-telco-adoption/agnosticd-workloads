@@ -3,7 +3,19 @@
 # Deprovision — reverse order of workload.yml
 # ---------------------------------------------------------------------------
 
-# 0. InferenceService and ServingRuntime
+# 0. Gen AI Playground (LlamaStackDistribution + ConfigMap)
+- name: Remove LlamaStackDistribution
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: llamastack.io/v1alpha1
+    kind: LlamaStackDistribution
+    name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
+# 1. InferenceService and ServingRuntime
 - name: Remove InferenceService
   when: ocp4_workload_rhoai3x_model_deploy | bool
   kubernetes.core.k8s:
