@@ -8,7 +8,7 @@
   when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
   kubernetes.core.k8s:
     state: absent
-    api_version: datasciencepipelinesapplications.opendatahub.io/v1alpha1
+    api_version: datasciencepipelinesapplications.opendatahub.io/v1
     kind: DataSciencePipelinesApplication
     name: pipelines-definition
     namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
