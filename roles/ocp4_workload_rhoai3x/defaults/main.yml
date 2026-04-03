@@ -28,6 +28,12 @@ ocp4_workload_rhoai3x_gpu_instance_type: "g6e.4xlarge"
 # Number of GPU node replicas to provision
 ocp4_workload_rhoai3x_gpu_node_count: 1
 
+# Root EBS volume size in GB — must be large enough for NVIDIA driver images
+# (~48 GB) plus any OCI model images (gpt-oss-20b is ~40 GB unpacked).
+# 200 GB is the recommended minimum for single large model deployments.
+ocp4_workload_rhoai3x_gpu_root_volume_size: 200
+ocp4_workload_rhoai3x_gpu_root_volume_type: "gp3"
+
 # Suffix appended to the source MachineSet's cluster infra ID to form the
 # new MachineSet name, e.g. <infra-id>-gpu
 ocp4_workload_rhoai3x_gpu_machineset_name_suffix: "gpu"

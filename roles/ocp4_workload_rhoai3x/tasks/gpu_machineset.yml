@@ -37,6 +37,16 @@
       (instance type: {{ ocp4_workload_rhoai3x_gpu_instance_type }},
       replicas: {{ ocp4_workload_rhoai3x_gpu_node_count }})
 
+- name: Build GPU MachineSet root volume block device
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_gpu_block_devices: >-
+      {{ [_ocp4_workload_rhoai3x_source_ms.spec.template.spec.providerSpec.value.blockDevices[0] | combine({
+           'ebs': _ocp4_workload_rhoai3x_source_ms.spec.template.spec.providerSpec.value.blockDevices[0].ebs | combine({
+             'volumeSize': ocp4_workload_rhoai3x_gpu_root_volume_size | int,
+             'volumeType': ocp4_workload_rhoai3x_gpu_root_volume_type
+           })
+         })] }}
+
 - name: Build GPU MachineSet spec
   ansible.builtin.set_fact:
     _ocp4_workload_rhoai3x_gpu_ms_spec:
@@ -72,7 +82,8 @@
                  },
                  'providerSpec': {
                    'value': _ocp4_workload_rhoai3x_source_ms.spec.template.spec.providerSpec.value | combine({
-                     'instanceType': ocp4_workload_rhoai3x_gpu_instance_type
+                     'instanceType': ocp4_workload_rhoai3x_gpu_instance_type,
+                     'blockDevices': _ocp4_workload_rhoai3x_gpu_block_devices
                    })
                  }
                }, recursive=True) }}
