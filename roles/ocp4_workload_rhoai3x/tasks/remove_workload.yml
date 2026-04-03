@@ -1,0 +1,198 @@
+---
+# ---------------------------------------------------------------------------
+# Deprovision — reverse order of workload.yml
+# ---------------------------------------------------------------------------
+
+# 1. DataSciencePipelineApplication
+- name: Remove DataSciencePipelineApplication
+  when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: datasciencepipelinesapplications.opendatahub.io/v1alpha1
+    kind: DataSciencePipelinesApplication
+    name: pipelines-definition
+    namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+
+- name: Remove MinIO credentials Secret
+  when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Secret
+    name: rhoai-pipeline-minio-secret
+    namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+
+- name: Remove pipeline project namespace
+  when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+
+# 2. DataScienceCluster
+- name: Remove DataScienceCluster CR
+  kubernetes.core.k8s:
+    state: absent
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp4_workload_rhoai3x_dsc_name }}"
+
+- name: Wait for DataScienceCluster to be deleted
+  kubernetes.core.k8s_info:
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp4_workload_rhoai3x_dsc_name }}"
+  register: _ocp4_workload_rhoai3x_dsc_deleted
+  until: _ocp4_workload_rhoai3x_dsc_deleted.resources | length == 0
+  retries: 20
+  delay: 15
+
+# 3. RHOAI Operator
+- name: Remove RHOAI Subscription
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    name: rhods-operator
+    namespace: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+
+- name: Get RHOAI CSV name for removal
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+  register: _ocp4_workload_rhoai3x_rhoai_csvs
+
+- name: Remove RHOAI ClusterServiceVersion(s)
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    name: "{{ item.metadata.name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+  loop: "{{ _ocp4_workload_rhoai3x_rhoai_csvs.resources }}"
+
+- name: Remove RHOAI OperatorGroup
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    name: rhods-operator
+    namespace: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+
+- name: Remove redhat-ods-operator namespace
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp4_workload_rhoai3x_operator_namespace }}"
+
+# 4. NVIDIA GPU Operator
+- name: Remove NVIDIA GPU Operator resources
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  block:
+  - name: Remove ClusterPolicy
+    kubernetes.core.k8s:
+      state: absent
+      api_version: nvidia.com/v1
+      kind: ClusterPolicy
+      name: gpu-cluster-policy
+
+  - name: Remove NVIDIA GPU Operator Subscription
+    kubernetes.core.k8s:
+      state: absent
+      api_version: operators.coreos.com/v1alpha1
+      kind: Subscription
+      name: gpu-operator-certified
+      namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+
+  - name: Get NVIDIA GPU Operator CSV name for removal
+    kubernetes.core.k8s_info:
+      api_version: operators.coreos.com/v1alpha1
+      kind: ClusterServiceVersion
+      namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+    register: _ocp4_workload_rhoai3x_nvidia_csvs
+
+  - name: Remove NVIDIA GPU Operator ClusterServiceVersion(s)
+    kubernetes.core.k8s:
+      state: absent
+      api_version: operators.coreos.com/v1alpha1
+      kind: ClusterServiceVersion
+      name: "{{ item.metadata.name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+    loop: "{{ _ocp4_workload_rhoai3x_nvidia_csvs.resources }}"
+
+  - name: Remove NVIDIA GPU Operator OperatorGroup
+    kubernetes.core.k8s:
+      state: absent
+      api_version: operators.coreos.com/v1
+      kind: OperatorGroup
+      name: nvidia-gpu-operator-group
+      namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+
+  - name: Remove nvidia-gpu-operator namespace
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Namespace
+      name: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+
+# 5. NodeFeatureDiscovery instance (operator itself was installed by Stage 1 — leave it)
+- name: Remove NodeFeatureDiscovery instance
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: nfd.kubernetes.io/v1
+    kind: NodeFeatureDiscovery
+    name: "{{ ocp4_workload_rhoai3x_nfd_instance_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
+
+# 6. GPU MachineSet — scale to 0 first, then delete
+- name: Remove GPU MachineSet
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  block:
+  - name: Get GPU MachineSet name
+    kubernetes.core.k8s_info:
+      api_version: machine.openshift.io/v1beta1
+      kind: MachineSet
+      namespace: openshift-machine-api
+      label_selectors:
+      - "node-role.kubernetes.io/gpu="
+    register: _ocp4_workload_rhoai3x_gpu_ms_list
+
+  - name: Scale GPU MachineSet to 0 replicas
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: machine.openshift.io/v1beta1
+        kind: MachineSet
+        metadata:
+          name: "{{ item.metadata.name }}"
+          namespace: openshift-machine-api
+        spec:
+          replicas: 0
+    loop: "{{ _ocp4_workload_rhoai3x_gpu_ms_list.resources }}"
+
+  - name: Wait for GPU MachineSet replicas to reach 0
+    kubernetes.core.k8s_info:
+      api_version: machine.openshift.io/v1beta1
+      kind: MachineSet
+      name: "{{ item.metadata.name }}"
+      namespace: openshift-machine-api
+    register: _ocp4_workload_rhoai3x_gpu_ms_scaled
+    until: >-
+      _ocp4_workload_rhoai3x_gpu_ms_scaled.resources | length == 0
+      or (_ocp4_workload_rhoai3x_gpu_ms_scaled.resources[0].status.replicas | default(0) | int) == 0
+    retries: 20
+    delay: 30
+    loop: "{{ _ocp4_workload_rhoai3x_gpu_ms_list.resources }}"
+
+  - name: Delete GPU MachineSet
+    kubernetes.core.k8s:
+      state: absent
+      api_version: machine.openshift.io/v1beta1
+      kind: MachineSet
+      name: "{{ item.metadata.name }}"
+      namespace: openshift-machine-api
+    loop: "{{ _ocp4_workload_rhoai3x_gpu_ms_list.resources }}"

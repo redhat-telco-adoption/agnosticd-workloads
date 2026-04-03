@@ -1,0 +1,26 @@
+---
+# Internal variables — set during the workload run, not user-facing.
+# All names are prefixed with a single underscore followed by the role name.
+
+# Source worker MachineSet used as the clone template for GPU nodes
+_ocp4_workload_rhoai3x_source_ms: {}
+
+# Cluster infrastructure ID, extracted from the source MachineSet labels
+_ocp4_workload_rhoai3x_infra_id: ""
+
+# Full name of the GPU MachineSet that will be created
+_ocp4_workload_rhoai3x_gpu_ms_name: ""
+
+# Full spec dict for the GPU MachineSet (built at runtime before apply)
+_ocp4_workload_rhoai3x_gpu_ms_spec: {}
+
+# Current CSV name for the NVIDIA GPU Operator (populated from Subscription status)
+_ocp4_workload_rhoai3x_nvidia_csv_name: ""
+
+# Current CSV name for the RHOAI Operator (populated from Subscription status)
+_ocp4_workload_rhoai3x_rhoai_csv_name: ""
+
+# Parsed MinIO connection fields (derived from ocp4_workload_rhoai3x_pipeline_minio_endpoint)
+_ocp4_workload_rhoai3x_pipeline_minio_scheme: ""
+_ocp4_workload_rhoai3x_pipeline_minio_host: ""
+_ocp4_workload_rhoai3x_pipeline_minio_port: ""

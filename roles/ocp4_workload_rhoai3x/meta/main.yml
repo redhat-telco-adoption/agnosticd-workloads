@@ -1,0 +1,20 @@
+galaxy_info:
+  role_name: ocp4_workload_rhoai3x
+  author: Red Hat
+  description: |
+    Deploys Red Hat OpenShift AI (RHOAI) 3.x on OpenShift 4, including:
+    - GPU MachineSet provisioning (AWS g6e instance type)
+    - NVIDIA GPU Operator via OLM
+    - RHOAI Operator via OLM
+    - DataScienceCluster CR (Dashboard, Workbenches, KServe, AI Pipelines)
+    - DataSciencePipelineApplication CR backed by MinIO (Stage 1)
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms: []
+  galaxy_tags:
+  - ocp
+  - openshift
+  - rhoai
+  - gpu
+  - ai
+dependencies: []

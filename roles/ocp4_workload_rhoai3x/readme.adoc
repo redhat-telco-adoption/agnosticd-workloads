@@ -1,0 +1,183 @@
+= ocp4_workload_rhoai3x — Red Hat OpenShift AI 3.x
+
+== Overview
+
+Stage 2 workload role that installs and configures *Red Hat OpenShift AI (RHOAI) 3.3* on an OpenShift 4 cluster on AWS (Red Hat Demo Platform).
+
+=== Prerequisites (Stage 1)
+
+The following workloads must already be deployed before running this role:
+
+* `ocp4_workload_authentication_htpasswd` — admin user + student users
+* `ocp4_workload_nfd` — Node Feature Discovery (labels GPU nodes automatically)
+* `ocp4_workload_minio` — S3-compatible storage for model artifacts and pipeline logs
+
+=== What This Role Does
+
+. *GPU MachineSet* — Clones an existing worker MachineSet and provisions GPU nodes (AWS `g6e.4xlarge` by default). Waits for nodes to reach `Ready` status before continuing.
+. *NVIDIA GPU Operator* — Installed via OLM from the `certified-operators` catalog. Waits for the `ClusterPolicy` to reach `ready` state.
+. *RHOAI Operator* — Installed via OLM from `redhat-operators`, channel `fast-3.3`. Waits for the CSV to succeed.
+. *DataScienceCluster* — Enables Dashboard, Workbenches, KServe (RawDeployment mode), and AI Pipelines. Waits for `Ready` phase.
+. *DataSciencePipelineApplication* — Pre-creates a shared AI Pipelines instance in the `rhoai-shared` project, backed by the MinIO instance from Stage 1.
+
+== Variables
+
+=== GPU MachineSet
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_gpu_instance_type`
+|`g6e.4xlarge`
+|AWS instance type for GPU nodes
+
+|`ocp4_workload_rhoai3x_gpu_node_count`
+|`1`
+|Number of GPU node replicas
+
+|`ocp4_workload_rhoai3x_gpu_machineset_name_suffix`
+|`gpu`
+|Suffix appended to cluster infra ID to form the GPU MachineSet name
+
+|`ocp4_workload_rhoai3x_gpu_node_ready_retries`
+|`40`
+|Retry count when waiting for GPU nodes to become Ready
+
+|`ocp4_workload_rhoai3x_gpu_node_ready_delay`
+|`30`
+|Seconds between retries (max wait ≈ 20 minutes)
+|===
+
+=== NVIDIA GPU Operator
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_install`
+|`true`
+|Set to `false` to skip GPU operator installation
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_channel`
+|`v24.9`
+|OLM channel for the GPU operator
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace`
+|`nvidia-gpu-operator`
+|Namespace where the GPU operator is installed
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries`
+|`30`
+|Retry count when waiting for CSV / ClusterPolicy
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay`
+|`20`
+|Seconds between retries
+|===
+
+=== RHOAI Operator
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_operator_channel`
+|`fast-3.3`
+|OLM channel for the RHOAI operator
+
+|`ocp4_workload_rhoai3x_operator_namespace`
+|`redhat-ods-operator`
+|Namespace where the RHOAI operator is installed
+
+|`ocp4_workload_rhoai3x_operator_csv_wait_retries`
+|`45`
+|Retry count when waiting for RHOAI CSV
+
+|`ocp4_workload_rhoai3x_operator_csv_wait_delay`
+|`20`
+|Seconds between retries
+|===
+
+=== DataScienceCluster
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_dsc_name`
+|`default-dsc`
+|Name of the DataScienceCluster CR
+
+|`ocp4_workload_rhoai3x_kserve_serving_management_state`
+|`Unmanaged`
+|KServe serving management state (Unmanaged avoids Service Mesh dependency)
+
+|`ocp4_workload_rhoai3x_kserve_deployment_mode`
+|`RawDeployment`
+|KServe deployment mode (RawDeployment creates OpenShift Routes)
+
+|`ocp4_workload_rhoai3x_dsc_wait_retries`
+|`30`
+|Retry count when waiting for DSC Ready phase
+
+|`ocp4_workload_rhoai3x_dsc_wait_delay`
+|`20`
+|Seconds between retries
+|===
+
+=== DataSciencePipelineApplication
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_pipeline_app_configure`
+|`true`
+|Set to `false` to skip pipeline application creation
+
+|`ocp4_workload_rhoai3x_pipeline_app_project`
+|`rhoai-shared`
+|OpenShift project for the shared pipeline application
+
+|`ocp4_workload_rhoai3x_pipeline_minio_endpoint`
+|`http://minio.minio.svc.cluster.local:9000`
+|MinIO endpoint URL (must match Stage 1 MinIO deployment)
+
+|`ocp4_workload_rhoai3x_pipeline_minio_bucket`
+|`rhoai-pipelines`
+|MinIO bucket for pipeline artifacts
+
+|`ocp4_workload_rhoai3x_pipeline_minio_access_key`
+|`minio`
+|MinIO access key
+
+|`ocp4_workload_rhoai3x_pipeline_minio_secret_key`
+|`minio123`
+|MinIO secret key — *override in your vars file*
+|===
+
+== Verification
+
+[source,bash]
+----
+# GPU nodes
+oc get nodes -l node-role.kubernetes.io/gpu=
+
+# NVIDIA GPU Operator
+oc get csv -n nvidia-gpu-operator | grep gpu-operator
+oc get clusterpolicy gpu-cluster-policy
+
+# RHOAI Operator
+oc get csv -n redhat-ods-operator | grep rhods
+oc get pods -n redhat-ods-applications
+
+# DataScienceCluster
+oc get datasciencecluster default-dsc -o jsonpath='{.status.phase}'
+
+# RHOAI Dashboard route
+oc get route -n redhat-ods-applications | grep dashboard
+
+# AI Pipelines
+oc get datasciencepipelinesapplication -n rhoai-shared
+----

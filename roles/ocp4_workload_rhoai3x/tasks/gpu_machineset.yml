@@ -1,0 +1,91 @@
+---
+# ---------------------------------------------------------------------------
+# GPU MachineSet provisioning
+# Clones the first available worker MachineSet, changes the instance type to
+# a GPU-capable instance, and waits for the node(s) to become Ready.
+# NFD (Stage 1) will automatically label the GPU nodes once they join.
+# ---------------------------------------------------------------------------
+
+- name: Get existing worker MachineSets from openshift-machine-api
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: openshift-machine-api
+  register: _ocp4_workload_rhoai3x_machinesets_raw
+
+- name: Fail if no MachineSets found
+  ansible.builtin.fail:
+    msg: "No MachineSets found in openshift-machine-api. Cannot clone a GPU MachineSet."
+  when: _ocp4_workload_rhoai3x_machinesets_raw.resources | length == 0
+
+- name: Store source MachineSet (first found)
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_source_ms: "{{ _ocp4_workload_rhoai3x_machinesets_raw.resources | first }}"
+
+- name: Derive cluster infra ID and GPU MachineSet name
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_infra_id: >-
+      {{ _ocp4_workload_rhoai3x_source_ms.metadata.labels['machine.openshift.io/cluster-api-cluster'] }}
+    _ocp4_workload_rhoai3x_gpu_ms_name: >-
+      {{ _ocp4_workload_rhoai3x_source_ms.metadata.labels['machine.openshift.io/cluster-api-cluster'] }}-{{ ocp4_workload_rhoai3x_gpu_machineset_name_suffix }}
+
+- name: "Show GPU MachineSet name that will be created"
+  ansible.builtin.debug:
+    msg: >-
+      Cloning MachineSet '{{ _ocp4_workload_rhoai3x_source_ms.metadata.name }}'
+      → '{{ _ocp4_workload_rhoai3x_gpu_ms_name }}'
+      (instance type: {{ ocp4_workload_rhoai3x_gpu_instance_type }},
+      replicas: {{ ocp4_workload_rhoai3x_gpu_node_count }})
+
+- name: Build GPU MachineSet spec
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_gpu_ms_spec:
+      apiVersion: machine.openshift.io/v1beta1
+      kind: MachineSet
+      metadata:
+        name: "{{ _ocp4_workload_rhoai3x_gpu_ms_name }}"
+        namespace: openshift-machine-api
+        labels: >-
+          {{ _ocp4_workload_rhoai3x_source_ms.metadata.labels | combine({
+               'machine.openshift.io/cluster-api-machineset': _ocp4_workload_rhoai3x_gpu_ms_name
+             }) }}
+      spec:
+        replicas: "{{ ocp4_workload_rhoai3x_gpu_node_count | int }}"
+        selector:
+          matchLabels:
+            machine.openshift.io/cluster-api-cluster: "{{ _ocp4_workload_rhoai3x_infra_id }}"
+            machine.openshift.io/cluster-api-machineset: "{{ _ocp4_workload_rhoai3x_gpu_ms_name }}"
+        template:
+          metadata:
+            labels: >-
+              {{ _ocp4_workload_rhoai3x_source_ms.spec.template.metadata.labels | combine({
+                   'machine.openshift.io/cluster-api-machineset': _ocp4_workload_rhoai3x_gpu_ms_name,
+                   'node-role.kubernetes.io/gpu': ''
+                 }) }}
+          spec: >-
+            {{ _ocp4_workload_rhoai3x_source_ms.spec.template.spec | combine({
+                 'providerSpec': {
+                   'value': _ocp4_workload_rhoai3x_source_ms.spec.template.spec.providerSpec.value | combine({
+                     'instanceType': ocp4_workload_rhoai3x_gpu_instance_type
+                   })
+                 }
+               }, recursive=True) }}
+
+- name: Apply GPU MachineSet
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ _ocp4_workload_rhoai3x_gpu_ms_spec }}"
+
+- name: Wait for GPU MachineSet to have ready replicas
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: "{{ _ocp4_workload_rhoai3x_gpu_ms_name }}"
+    namespace: openshift-machine-api
+  register: _ocp4_workload_rhoai3x_gpu_ms_status
+  until: >-
+    _ocp4_workload_rhoai3x_gpu_ms_status.resources | length > 0
+    and (_ocp4_workload_rhoai3x_gpu_ms_status.resources[0].status.readyReplicas | default(0) | int)
+        >= (ocp4_workload_rhoai3x_gpu_node_count | int)
+  retries: "{{ ocp4_workload_rhoai3x_gpu_node_ready_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_gpu_node_ready_delay }}"

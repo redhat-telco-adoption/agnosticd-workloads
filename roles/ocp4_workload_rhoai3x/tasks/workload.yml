@@ -1,0 +1,27 @@
+---
+# ---------------------------------------------------------------------------
+# Provision orchestration
+# Task files run in dependency order.
+# ---------------------------------------------------------------------------
+
+- name: Create NodeFeatureDiscovery instance
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  ansible.builtin.include_tasks: nfd_instance.yml
+
+- name: Provision GPU MachineSet
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  ansible.builtin.include_tasks: gpu_machineset.yml
+
+- name: Install NVIDIA GPU Operator
+  when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
+  ansible.builtin.include_tasks: nvidia_gpu_operator.yml
+
+- name: Install RHOAI Operator
+  ansible.builtin.include_tasks: rhoai_operator.yml
+
+- name: Configure DataScienceCluster
+  ansible.builtin.include_tasks: datasciencecluster.yml
+
+- name: Configure DataSciencePipelineApplication
+  when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
+  ansible.builtin.include_tasks: pipeline_app.yml

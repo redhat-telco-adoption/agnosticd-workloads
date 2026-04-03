@@ -1,0 +1,68 @@
+---
+# ---------------------------------------------------------------------------
+# NodeFeatureDiscovery instance
+# Stage 1 (ocp4_workload_nfd) installs the NFD operator but does not create
+# the NodeFeatureDiscovery CR that starts the discovery daemonset.
+# This task creates it so NFD is actively labeling nodes before GPU nodes
+# join the cluster and before the NVIDIA GPU Operator is installed.
+# ---------------------------------------------------------------------------
+
+- name: Wait for NodeFeatureDiscovery CRD to be established
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: nodefeatureddiscoveries.nfd.kubernetes.io
+  register: _ocp4_workload_rhoai3x_nfd_crd
+  until: >-
+    _ocp4_workload_rhoai3x_nfd_crd.resources | length > 0
+    and (_ocp4_workload_rhoai3x_nfd_crd.resources[0].status.conditions
+         | selectattr('type', 'equalto', 'Established')
+         | selectattr('status', 'equalto', 'True')
+         | list | length) > 0
+  retries: 20
+  delay: 10
+
+- name: Create NodeFeatureDiscovery instance
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: nfd.kubernetes.io/v1
+      kind: NodeFeatureDiscovery
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_nfd_instance_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
+      spec:
+        operand:
+          servicePort: 12000
+        workerConfig:
+          configData: |
+            core:
+              sleepInterval: 60s
+            sources:
+              pci:
+                deviceClassWhitelist:
+                  - "0200"
+                  - "03"
+                  - "12"
+                deviceLabelFields:
+                  - "class"
+                  - "vendor"
+                  - "device"
+                  - "subsystem_vendor"
+                  - "subsystem_device"
+
+- name: Wait for NFD master Pod to be Running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
+    label_selectors:
+    - "app=nfd-master"
+  register: _ocp4_workload_rhoai3x_nfd_pods
+  until: >-
+    _ocp4_workload_rhoai3x_nfd_pods.resources | length > 0
+    and (_ocp4_workload_rhoai3x_nfd_pods.resources
+         | selectattr('status.phase', 'equalto', 'Running')
+         | list | length) > 0
+  retries: 20
+  delay: 10

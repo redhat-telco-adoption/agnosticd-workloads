@@ -1,0 +1,132 @@
+---
+# ---------------------------------------------------------------------------
+# NVIDIA GPU Operator installation via OLM
+# Requires: NFD instance running (nfd_instance.yml), GPU nodes ready (gpu_machineset.yml)
+# ClusterPolicy is created explicitly with OpenShift-specific defaults.
+# ---------------------------------------------------------------------------
+
+- name: Create nvidia-gpu-operator namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+        labels:
+          openshift.io/cluster-monitoring: "true"
+
+- name: Create OperatorGroup for NVIDIA GPU Operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: nvidia-gpu-operator-group
+        namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+      spec:
+        targetNamespaces:
+        - "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+
+- name: Create Subscription for NVIDIA GPU Operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: gpu-operator-certified
+        namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+      spec:
+        channel: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_channel }}"
+        name: gpu-operator-certified
+        source: certified-operators
+        sourceNamespace: openshift-marketplace
+        installPlanApproval: Automatic
+
+- name: Wait for NVIDIA GPU Operator Subscription to resolve a CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    name: gpu-operator-certified
+    namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+  register: _ocp4_workload_rhoai3x_nvidia_sub
+  until: >-
+    _ocp4_workload_rhoai3x_nvidia_sub.resources | length > 0
+    and _ocp4_workload_rhoai3x_nvidia_sub.resources[0].status.currentCSV is defined
+  retries: 20
+  delay: 10
+
+- name: Store NVIDIA GPU Operator CSV name
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_nvidia_csv_name: >-
+      {{ _ocp4_workload_rhoai3x_nvidia_sub.resources[0].status.currentCSV }}
+
+- name: Wait for NVIDIA GPU Operator CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    name: "{{ _ocp4_workload_rhoai3x_nvidia_csv_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
+  register: _ocp4_workload_rhoai3x_nvidia_csv
+  until: >-
+    _ocp4_workload_rhoai3x_nvidia_csv.resources | length > 0
+    and _ocp4_workload_rhoai3x_nvidia_csv.resources[0].status.phase | default('') == 'Succeeded'
+  retries: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay }}"
+
+- name: Create ClusterPolicy with OpenShift defaults
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: nvidia.com/v1
+      kind: ClusterPolicy
+      metadata:
+        name: gpu-cluster-policy
+      spec:
+        operator:
+          defaultRuntime: crio
+          use_ocp_driver_toolkit: true
+          initContainer: {}
+        daemonsets: {}
+        driver:
+          enabled: true
+        toolkit:
+          enabled: true
+        devicePlugin:
+          enabled: true
+          config:
+            name: ""
+            default: ""
+        dcgm:
+          enabled: true
+        dcgmExporter:
+          enabled: true
+          config:
+            name: ""
+        gfd:
+          enabled: true
+        mig:
+          strategy: single
+        migManager:
+          enabled: true
+        validator:
+          plugin:
+            env:
+            - name: WITH_WORKLOAD
+              value: "false"
+        nodeStatusExporter:
+          enabled: false
+
+- name: Wait for ClusterPolicy gpu-cluster-policy to reach ready state
+  kubernetes.core.k8s_info:
+    api_version: nvidia.com/v1
+    kind: ClusterPolicy
+    name: gpu-cluster-policy
+  register: _ocp4_workload_rhoai3x_cluster_policy
+  until: >-
+    _ocp4_workload_rhoai3x_cluster_policy.resources | length > 0
+    and _ocp4_workload_rhoai3x_cluster_policy.resources[0].status.state | default('') == 'ready'
+  retries: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay }}"

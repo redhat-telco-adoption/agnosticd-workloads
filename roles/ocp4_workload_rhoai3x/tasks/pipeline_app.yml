@@ -1,0 +1,84 @@
+---
+# ---------------------------------------------------------------------------
+# DataSciencePipelineApplication
+# Pre-creates an AI Pipelines instance in a shared project, backed by the
+# MinIO instance from Stage 1. Users can create additional instances in their
+# own projects; this one provides a ready-to-use shared environment.
+# ---------------------------------------------------------------------------
+
+- name: Parse MinIO endpoint into scheme, host, and port
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_pipeline_minio_scheme: >-
+      {{ ocp4_workload_rhoai3x_pipeline_minio_endpoint | urlsplit('scheme') }}
+    _ocp4_workload_rhoai3x_pipeline_minio_host: >-
+      {{ ocp4_workload_rhoai3x_pipeline_minio_endpoint | urlsplit('hostname') }}
+    _ocp4_workload_rhoai3x_pipeline_minio_port: >-
+      {{ ocp4_workload_rhoai3x_pipeline_minio_endpoint | urlsplit('port') | string }}
+
+- name: Create pipeline project namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+        labels:
+          # Marks this as a Data Science Project visible in the RHOAI Dashboard
+          opendatahub.io/dashboard: "true"
+
+- name: Create MinIO credentials Secret for pipeline application
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: rhoai-pipeline-minio-secret
+        namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+      type: Opaque
+      stringData:
+        AWS_ACCESS_KEY_ID: "{{ ocp4_workload_rhoai3x_pipeline_minio_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ ocp4_workload_rhoai3x_pipeline_minio_secret_key }}"
+
+- name: Apply DataSciencePipelinesApplication CR
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: datasciencepipelinesapplications.opendatahub.io/v1alpha1
+      kind: DataSciencePipelinesApplication
+      metadata:
+        name: pipelines-definition
+        namespace: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
+      spec:
+        dspVersion: v2
+        apiServer:
+          deploy: true
+          enableSamplePipeline: false
+          stripEOF: true
+          autoUpdatePipelineDefaultVersion: true
+        database:
+          mariaDB:
+            deploy: true
+            pipelineDBName: mlpipeline
+            pvcSize: 10Gi
+            username: mlpipeline
+        mlpipelineUI:
+          deploy: true
+        objectStorage:
+          externalStorage:
+            bucket: "{{ ocp4_workload_rhoai3x_pipeline_minio_bucket }}"
+            host: "{{ _ocp4_workload_rhoai3x_pipeline_minio_host }}"
+            port: "{{ _ocp4_workload_rhoai3x_pipeline_minio_port }}"
+            scheme: "{{ _ocp4_workload_rhoai3x_pipeline_minio_scheme }}"
+            secure: false
+            s3CredentialsSecret:
+              accessKey: AWS_ACCESS_KEY_ID
+              secretKey: AWS_SECRET_ACCESS_KEY
+              secretName: rhoai-pipeline-minio-secret
+        persistenceAgent:
+          deploy: true
+          numWorkers: 2
+        scheduledWorkflow:
+          deploy: true
+          cronScheduleTimezone: UTC

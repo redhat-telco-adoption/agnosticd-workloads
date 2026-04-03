@@ -1,0 +1,107 @@
+---
+# ocp_username can be set by the provisioner if the workload is applied to a
+# shared cluster to set up for the requesting user.
+# The default, "system:admin", is used for roles deployed as part of a whole
+# OpenShift cluster provision run.
+ocp_username: "system:admin"
+
+# ---------------------------------------------------------------------------
+# Node Feature Discovery instance
+# Stage 1 installs the NFD operator; this role creates the NodeFeatureDiscovery
+# CR that starts the discovery daemonset. Namespace must match Stage 1 deployment.
+# ---------------------------------------------------------------------------
+
+# Namespace where the NFD operator from Stage 1 was installed
+ocp4_workload_rhoai3x_nfd_namespace: "openshift-nfd"
+
+# Name of the NodeFeatureDiscovery CR to create
+ocp4_workload_rhoai3x_nfd_instance_name: "nfd-instance"
+
+# ---------------------------------------------------------------------------
+# GPU MachineSet
+# Clone an existing worker MachineSet to provision GPU nodes on AWS.
+# ---------------------------------------------------------------------------
+
+# AWS instance type for GPU nodes (g6e family recommended for RHOAI/KServe)
+ocp4_workload_rhoai3x_gpu_instance_type: "g6e.4xlarge"
+
+# Number of GPU node replicas to provision
+ocp4_workload_rhoai3x_gpu_node_count: 1
+
+# Suffix appended to the source MachineSet's cluster infra ID to form the
+# new MachineSet name, e.g. <infra-id>-gpu
+ocp4_workload_rhoai3x_gpu_machineset_name_suffix: "gpu"
+
+# How long to wait for GPU nodes to reach Ready status
+ocp4_workload_rhoai3x_gpu_node_ready_retries: 40
+ocp4_workload_rhoai3x_gpu_node_ready_delay: 30
+
+# ---------------------------------------------------------------------------
+# NVIDIA GPU Operator
+# Installed via OLM from the certified-operators catalog.
+# NFD (Stage 1) must already be running to label GPU nodes.
+# ---------------------------------------------------------------------------
+
+# Set to false to skip GPU operator installation (e.g. on clusters with no GPU nodes)
+ocp4_workload_rhoai3x_nvidia_gpu_operator_install: true
+
+# OLM channel — verify with:
+#   oc get packagemanifest gpu-operator-certified -n openshift-marketplace \
+#     -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}'
+ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v24.9"
+
+# Namespace where the GPU Operator is installed (cluster-scoped OperatorGroup)
+ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
+
+# Retries / delay for waiting on GPU Operator CSV and ClusterPolicy
+ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries: 30
+ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay: 20
+
+# ---------------------------------------------------------------------------
+# RHOAI Operator
+# Installed via OLM from the redhat-operators catalog.
+# ---------------------------------------------------------------------------
+
+# OLM channel for RHOAI 3.3
+ocp4_workload_rhoai3x_operator_channel: "fast-3.3"
+
+# Namespace where the RHOAI operator is installed
+ocp4_workload_rhoai3x_operator_namespace: "redhat-ods-operator"
+
+# Retries / delay for waiting on RHOAI CSV
+ocp4_workload_rhoai3x_operator_csv_wait_retries: 45
+ocp4_workload_rhoai3x_operator_csv_wait_delay: 20
+
+# ---------------------------------------------------------------------------
+# DataScienceCluster
+# Enables Dashboard, Workbenches, KServe, and AI Pipelines.
+# ---------------------------------------------------------------------------
+
+# Name of the DataScienceCluster CR
+ocp4_workload_rhoai3x_dsc_name: "default-dsc"
+
+# KServe serving configuration
+# Unmanaged + RawDeployment avoids Service Mesh / Serverless dependencies (RHOAI 3.x)
+ocp4_workload_rhoai3x_kserve_serving_management_state: "Unmanaged"
+ocp4_workload_rhoai3x_kserve_deployment_mode: "RawDeployment"
+
+# Retries / delay for waiting on DataScienceCluster Ready status
+ocp4_workload_rhoai3x_dsc_wait_retries: 30
+ocp4_workload_rhoai3x_dsc_wait_delay: 20
+
+# ---------------------------------------------------------------------------
+# DataSciencePipelineApplication (optional)
+# Pre-creates an AI Pipelines instance pointing at the MinIO from Stage 1.
+# ---------------------------------------------------------------------------
+
+# Set to false to skip pipeline application creation
+ocp4_workload_rhoai3x_pipeline_app_configure: true
+
+# OpenShift project (namespace) where the pipeline application is created
+ocp4_workload_rhoai3x_pipeline_app_project: "rhoai-shared"
+
+# MinIO connection details — must match the ocp4_workload_minio config from Stage 1
+ocp4_workload_rhoai3x_pipeline_minio_endpoint: "http://minio.minio.svc.cluster.local:9000"
+ocp4_workload_rhoai3x_pipeline_minio_bucket: "rhoai-pipelines"
+ocp4_workload_rhoai3x_pipeline_minio_access_key: "minio"
+ocp4_workload_rhoai3x_pipeline_minio_secret_key: "minio123"
