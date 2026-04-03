@@ -126,6 +126,13 @@
     kind: Namespace
     name: redhat-ods-applications
 
+- name: Remove rhods-notebooks namespace (auto-created by RHOAI operator)
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: rhods-notebooks
+
 # 5. NVIDIA GPU Operator
 - name: Remove NVIDIA GPU Operator resources
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
