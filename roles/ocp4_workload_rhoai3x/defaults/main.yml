@@ -54,7 +54,7 @@ ocp4_workload_rhoai3x_nvidia_gpu_operator_install: true
 # OLM channel — verify with:
 #   oc get packagemanifest gpu-operator-certified -n openshift-marketplace \
 #     -o jsonpath='{range .status.channels[*]}{.name}{"\n"}{end}'
-ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v24.9"
+ocp4_workload_rhoai3x_nvidia_gpu_operator_channel: "v26.3"
 
 # Namespace where the GPU Operator is installed (cluster-scoped OperatorGroup)
 ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace: "nvidia-gpu-operator"
@@ -76,8 +76,8 @@ ocp4_workload_rhoai3x_nvidia_driver_image: "driver"
 # Installed via OLM from the redhat-operators catalog.
 # ---------------------------------------------------------------------------
 
-# OLM channel for RHOAI 3.3
-ocp4_workload_rhoai3x_operator_channel: "fast-3.x"
+# OLM channel for RHOAI 3.x
+ocp4_workload_rhoai3x_operator_channel: "stable-3.x"
 
 # Namespace where the RHOAI operator is installed
 ocp4_workload_rhoai3x_operator_namespace: "redhat-ods-operator"
