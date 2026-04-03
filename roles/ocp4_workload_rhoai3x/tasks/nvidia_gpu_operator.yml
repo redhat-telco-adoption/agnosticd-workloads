@@ -133,3 +133,20 @@
     and _ocp4_workload_rhoai3x_cluster_policy.resources[0].status.state | default('') == 'ready'
   retries: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries }}"
   delay: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay }}"
+
+- name: Wait for nvidia.com/gpu to be allocatable on GPU nodes
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    label_selectors:
+    - "nvidia.com/gpu.present=true"
+  register: _ocp4_workload_rhoai3x_gpu_nodes_alloc
+  until: >-
+    _ocp4_workload_rhoai3x_gpu_nodes_alloc.resources | length > 0
+    and (_ocp4_workload_rhoai3x_gpu_nodes_alloc.resources
+         | map(attribute='status.allocatable')
+         | selectattr('nvidia.com/gpu', 'defined')
+         | map(attribute='nvidia.com/gpu')
+         | map('int') | sum) > 0
+  retries: 20
+  delay: 30
