@@ -212,6 +212,7 @@ ocp4_workload_rhoai3x_pipeline_minio_secret_key: "minio123"
 | Node Feature Discovery (NFD) Operator | [NFD Operator — OpenShift 4.17](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/specialized_hardware_and_driver_enablement/psap-node-feature-discovery-operator) |
 | OLM — Installing operators via Subscription | [Adding Operators to a cluster — OCP 4.17](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/operators/administrator-tasks#olm-adding-operators-to-a-cluster) |
 | AgnosticD workload role pattern | [ocp4_workload_example on GitHub](https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_example) |
+| vLLM CUDA image tags (RHOAI/RHAIIS) | [odh-vllm-cuda-rhel9 — Red Hat Container Catalog](https://catalog.redhat.com/en/software/containers/rhoai/odh-vllm-cuda-rhel9/68af11f5fad01b87e349f2fa) |
 
 ---
 
