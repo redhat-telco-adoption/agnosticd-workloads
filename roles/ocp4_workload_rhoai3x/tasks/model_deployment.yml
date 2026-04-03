@@ -64,7 +64,6 @@
         name: "{{ ocp4_workload_rhoai3x_model_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
         annotations:
-          opendatahub.io/connections: "{{ ocp4_workload_rhoai3x_model_name }}"
           opendatahub.io/genai-use-case: chat
           opendatahub.io/model-type: generative
           openshift.io/description: ""
