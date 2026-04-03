@@ -4,11 +4,11 @@
 # Deploys a vLLM-based model using a ServingRuntime + InferenceService.
 # Defaults to gpt-oss-20b but any vLLM-compatible storageUri works.
 #
-# The ServingRuntime (vLLM + CUDA) is created once per namespace.
-# The InferenceService is the model-specific resource.
+# The ServingRuntime is named after the model (one per model, per namespace).
+# The InferenceService references the ServingRuntime by name.
 # ---------------------------------------------------------------------------
 
-- name: Create ServingRuntime for vLLM NVIDIA GPU
+- name: Create ServingRuntime for {{ ocp4_workload_rhoai3x_model_name }}
   kubernetes.core.k8s:
     state: present
     definition:
@@ -18,12 +18,18 @@
         name: "{{ ocp4_workload_rhoai3x_model_serving_runtime_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
         annotations:
-          openshift.io/display-name: vLLM NVIDIA GPU ServingRuntime for KServe
+          opendatahub.io/apiProtocol: REST
           opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+          opendatahub.io/runtime-version: v0.13.0
+          opendatahub.io/serving-runtime-scope: global
+          opendatahub.io/template-display-name: vLLM NVIDIA GPU ServingRuntime for KServe
+          opendatahub.io/template-name: vllm-cuda-runtime-template
+          openshift.io/display-name: vLLM NVIDIA GPU ServingRuntime for KServe
         labels:
           opendatahub.io/dashboard: "true"
       spec:
         annotations:
+          opendatahub.io/kserve-runtime: vllm
           prometheus.io/port: "8080"
           prometheus.io/path: /metrics
         multiModel: false
@@ -39,7 +45,7 @@
           - vllm.entrypoints.openai.api_server
           args: >-
             {{ ['--port=8080', '--model=/mnt/models',
-                '--served-model-name=' ~ ocp4_workload_rhoai3x_model_name]
+                '--served-model-name=' ~ '{{' ~ '.Name}}']
                + ocp4_workload_rhoai3x_model_extra_args }}
           env:
           - name: HF_HOME
@@ -58,12 +64,22 @@
         name: "{{ ocp4_workload_rhoai3x_model_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
         annotations:
+          opendatahub.io/connections: "{{ ocp4_workload_rhoai3x_model_name }}"
+          opendatahub.io/genai-use-case: chat
+          opendatahub.io/model-type: generative
+          openshift.io/description: ""
           openshift.io/display-name: "{{ ocp4_workload_rhoai3x_model_display_name }}"
+          security.opendatahub.io/enable-auth: "false"
           serving.kserve.io/deploymentMode: RawDeployment
         labels:
+          networking.kserve.io/visibility: exposed
           opendatahub.io/dashboard: "true"
+          opendatahub.io/genai-asset: "true"
       spec:
         predictor:
+          automountServiceAccountToken: false
+          deploymentStrategy:
+            type: Recreate
           minReplicas: "{{ ocp4_workload_rhoai3x_model_min_replicas | int }}"
           maxReplicas: "{{ ocp4_workload_rhoai3x_model_max_replicas | int }}"
           model:

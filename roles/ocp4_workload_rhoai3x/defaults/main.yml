@@ -142,8 +142,8 @@ ocp4_workload_rhoai3x_model_display_name: "gpt-oss-20b"
 # Storage URI — OCI ModelCar (registry.redhat.io), S3 (s3://), or HuggingFace (hf://)
 ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5"
 
-# ServingRuntime — shared across models in the same namespace
-ocp4_workload_rhoai3x_model_serving_runtime_name: "vllm-cuda-runtime"
+# ServingRuntime — one per model, named after the model (matches RHOAI dashboard convention)
+ocp4_workload_rhoai3x_model_serving_runtime_name: "{{ ocp4_workload_rhoai3x_model_name }}"
 ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
 
 # Additional vLLM CLI args appended after --port, --model, --served-model-name
