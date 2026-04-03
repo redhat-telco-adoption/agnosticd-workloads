@@ -140,10 +140,7 @@
   register: _ocp4_workload_rhoai3x_gpu_nodes_alloc
   until: >-
     _ocp4_workload_rhoai3x_gpu_nodes_alloc.resources | length > 0
-    and (_ocp4_workload_rhoai3x_gpu_nodes_alloc.resources
-         | map(attribute='status.allocatable')
-         | selectattr('nvidia.com/gpu', 'defined')
-         | map(attribute='nvidia.com/gpu')
-         | map('int') | sum) > 0
+    and (_ocp4_workload_rhoai3x_gpu_nodes_alloc.resources[0].status.allocatable['nvidia.com/gpu']
+         | default('0') | int) > 0
   retries: 20
   delay: 30
