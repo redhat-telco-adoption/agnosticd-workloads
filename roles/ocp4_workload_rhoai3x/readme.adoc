@@ -2,7 +2,12 @@
 
 == Overview
 
-Provisions a full *Red Hat OpenShift AI (RHOAI) 3.3* GPU demo environment on OpenShift 4 (AWS).
+This is an *opinionated* installation of *Red Hat OpenShift AI (RHOAI) 3.3* designed for the Red Hat Demo Platform.
+It makes deliberate choices about which components to enable, which GPU instance type to use, and which model to deploy — all tuned for a single-GPU demo environment on AWS.
+
+The role deploys *one model by default* (`gpt-oss-20b`) and wires it end-to-end: GPU infrastructure → RHOAI platform → model serving → Gen AI Playground → MLflow experiment tracking.
+See <<changing-the-model>> to deploy a different model instead.
+
 Runs as Stage 2 of the `openshift-workloads-rhoai` config, after NFD, MinIO, and htpasswd auth are already deployed by Stage 1.
 
 === Provisioning Order
@@ -340,6 +345,92 @@ NOTE: The MLflow CR is always created in `redhat-ods-applications` — the MLflo
 |===
 
 NOTE: `gpt-oss-20b:1.x` uses mxfp4 (NVIDIA MX Microscaling FP4) quantization. The generic `quay.io/modh/vllm` image does not support mxfp4. You must use the RHAIIS vLLM image. Do not pass `--quantization` — the image auto-detects it from the model config.
+
+[[changing-the-model]]
+== Changing the Deployed Model
+
+The role deploys a single model end-to-end. To use a different model, override the following variables in your vars file:
+
+[source,yaml]
+----
+# Model identity — used as the InferenceService name, ServingRuntime name, and display name
+ocp4_workload_rhoai3x_model_name: "my-model"
+ocp4_workload_rhoai3x_model_display_name: "My Model"
+
+# Where to pull the model from
+# OCI ModelCar (Red Hat registry):
+ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-<model>:<tag>"
+# S3 bucket:
+# ocp4_workload_rhoai3x_model_storage_uri: "s3://<bucket>/<path>"
+# HuggingFace:
+# ocp4_workload_rhoai3x_model_storage_uri: "hf://<org>/<repo>"
+
+# vLLM container image — only change this if not using an mxfp4 model
+# For standard fp16/bf16 models the generic RHOAI vLLM image works:
+# ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
+# For mxfp4 quantized models (e.g. gpt-oss-20b) the RHAIIS image is required:
+ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
+
+# Optional: extra vLLM CLI args
+# ocp4_workload_rhoai3x_model_extra_args: ["--max-model-len=8192"]
+
+# GPU and compute sizing — adjust to fit your model and GPU
+ocp4_workload_rhoai3x_model_gpu_count: "1"
+ocp4_workload_rhoai3x_model_memory_requests: "4Gi"
+ocp4_workload_rhoai3x_model_memory_limits: "8Gi"
+----
+
+=== Image selection guidance
+
+[cols="1,2,1"]
+|===
+|Model quantization |Image to use |Notes
+
+|mxfp4 (e.g. `gpt-oss-20b:1.x`)
+|`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
+|Required — generic images do not support mxfp4. Do not pass `--quantization`.
+
+|fp16 / bf16 (standard HuggingFace models)
+|`quay.io/modh/vllm:rhoai-2.25-cuda`
+|Standard RHOAI vLLM image, works with most public models.
+
+|GPTQ / AWQ
+|`quay.io/modh/vllm:rhoai-2.25-cuda`
+|Pass `--quantization gptq` or `--quantization awq` via `model_extra_args`.
+|===
+
+=== GPU sizing guidance
+
+The default `g6e.4xlarge` has 1x NVIDIA L40S (48 GB VRAM). For larger models or tensor parallelism:
+
+[cols="1,1,1,2"]
+|===
+|Instance type |GPUs |VRAM |Suitable for
+
+|`g6e.4xlarge`
+|1x L40S
+|48 GB
+|Models up to ~20B parameters (mxfp4/fp4), ~7B in fp16
+
+|`g6e.12xlarge`
+|4x L40S
+|192 GB
+|Models up to 70B in fp16; use `--tensor-parallel-size=4`
+
+|`g6e.48xlarge`
+|8x L40S
+|384 GB
+|Models up to 405B in fp16; use `--tensor-parallel-size=8`
+|===
+
+For multi-GPU deployments also set:
+
+[source,yaml]
+----
+ocp4_workload_rhoai3x_gpu_instance_type: "g6e.12xlarge"
+ocp4_workload_rhoai3x_model_gpu_count: "4"
+ocp4_workload_rhoai3x_model_extra_args: ["--tensor-parallel-size=4"]
+----
 
 == Access
 
