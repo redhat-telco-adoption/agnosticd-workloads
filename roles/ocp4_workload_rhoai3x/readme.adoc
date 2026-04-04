@@ -2,13 +2,9 @@
 
 == Overview
 
-This is an *opinionated* installation of *Red Hat OpenShift AI (RHOAI) 3.3* designed for the Red Hat Demo Platform.
-It makes deliberate choices about which components to enable, which GPU instance type to use, and which model to deploy — all tuned for a single-GPU demo environment on AWS.
+AgnosticDv2 workload role that provisions a *Red Hat OpenShift AI (RHOAI) 3.3* GPU demo environment on OpenShift 4 (AWS).
 
-The role deploys *one model by default* (`gpt-oss-20b`) and wires it end-to-end: GPU infrastructure → RHOAI platform → model serving → Gen AI Playground → MLflow experiment tracking.
-See <<changing-the-model>> to deploy a different model instead.
-
-Runs as Stage 2 of the `openshift-workloads-rhoai` config, after NFD, MinIO, and htpasswd auth are already deployed by Stage 1.
+This is an *opinionated* installation designed for the Red Hat Demo Platform. It makes deliberate choices about which RHOAI components to enable, which GPU instance type to use, and which model to serve — all tuned for a single-GPU demo. It deploys *one model end-to-end* out of the box (`gpt-oss-20b`), wired from GPU infrastructure through to model serving, Gen AI Playground, and MLflow experiment tracking. See <<changing-the-model>> to deploy a different model instead.
 
 === Provisioning Order
 
@@ -464,6 +460,130 @@ export MLFLOW_WORKSPACE="<your-namespace>"
 ----
 
 NOTE: The token is session-scoped. Refresh it with `oc whoami --show-token` each time.
+
+== Usage
+
+This role is deployed using https://github.com/agnosticd/agnosticd-v2[AgnosticDv2], a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc[AgnosticDv2 setup guide] to install the `agd` CLI and configure secrets before running this role.
+
+=== Base environment
+
+This role has been tested against the *AWS with OpenShift Open Environment* on the https://catalog.demo.redhat.com/catalog?item=babylon-catalog-prod/sandboxes-gpte.sandbox-ocp.prod[Red Hat Demo Platform]. It will need adaptation (instance type, storage class, cluster credentials) if deployed against a different base environment.
+
+=== Sample vars file
+
+Create a vars file (e.g. `agnosticd-v2-vars/openshift-workloads-rhoai.yml`). The `openshift-workloads` config deploys the workloads listed under `workloads:` in sequence to the target cluster. NFD, MinIO, and htpasswd auth must be included before this role.
+
+[source,yaml]
+----
+tag: main
+cloud_provider: none
+config: openshift-workloads
+
+requirements_content:
+  collections:
+  - name: https://github.com/agnosticd/core_workloads.git
+    type: git
+    version: "{{ tag }}"
+  - name: https://github.com/agnosticd/showroom.git
+    type: git
+    version: v1.5.7
+  - name: https://github.com/redhat-telco-adoption/agnosticd-workloads.git
+    type: git
+    version: "{{ tag }}"
+
+clusters:
+- default:
+    api_url: "{{ cluster1.sandbox_openshift_api_url }}"
+    api_token: "{{ cluster1.sandbox_openshift_api_token }}"
+
+workloads:
+- agnosticd.core_workloads.ocp4_workload_authentication_htpasswd
+- agnosticd.core_workloads.ocp4_workload_nfd
+- agnosticd.core_workloads.ocp4_workload_minio
+- redhat_telco_adoption.agnosticd.ocp4_workload_rhoai3x
+
+remove_workloads:
+- redhat_telco_adoption.agnosticd.ocp4_workload_rhoai3x
+- agnosticd.core_workloads.ocp4_workload_minio
+- agnosticd.core_workloads.ocp4_workload_nfd
+- agnosticd.core_workloads.ocp4_workload_authentication_htpasswd
+
+# -------------------------------------------------------------------
+# ocp4_workload_authentication_htpasswd
+# -------------------------------------------------------------------
+ocp4_workload_authentication_htpasswd_admin_user: admin
+ocp4_workload_authentication_htpasswd_admin_password: "YOUR_ADMIN_PASSWORD"
+ocp4_workload_authentication_htpasswd_user_count: 5
+ocp4_workload_authentication_htpasswd_user_password: "openshift"
+
+# -------------------------------------------------------------------
+# ocp4_workload_minio
+# -------------------------------------------------------------------
+ocp4_workload_minio_project: minio
+ocp4_workload_minio_storage_size: "200Gi"
+ocp4_workload_minio_root_user: "minio"
+ocp4_workload_minio_root_password: "YOUR_MINIO_PASSWORD"
+ocp4_workload_minio_bucket_name:
+- rhoai-models
+- rhoai-pipelines
+
+# -------------------------------------------------------------------
+# ocp4_workload_rhoai3x
+# -------------------------------------------------------------------
+ocp4_workload_rhoai3x_gpu_instance_type: "g6e.4xlarge"
+ocp4_workload_rhoai3x_gpu_node_count: 1
+ocp4_workload_rhoai3x_pipeline_minio_access_key: "{{ ocp4_workload_minio_root_user }}"
+ocp4_workload_rhoai3x_pipeline_minio_secret_key: "{{ ocp4_workload_minio_root_password }}"
+
+# Model to deploy (defaults shown — override to change the model)
+ocp4_workload_rhoai3x_model_name: "gpt-oss-20b"
+ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5"
+ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
+----
+
+=== Provision
+
+[source,bash]
+----
+./bin/agd provision --guid <your-guid> --config openshift-workloads-rhoai --account <your-account>
+----
+
+=== Destroy
+
+[source,bash]
+----
+./bin/agd destroy --guid <your-guid> --config openshift-workloads-rhoai --account <your-account>
+----
+
+=== Provision Timing
+
+Total provision time is approximately *60-90 minutes*, dominated by GPU node provisioning and model image pulls.
+
+[cols="2,1"]
+|===
+|Phase |Approximate duration
+
+|GPU node provisioning (MachineSet scale-up)
+|~10 min
+
+|NVIDIA GPU Operator + ClusterPolicy ready
+|~15 min
+
+|RHOAI Operator + DataScienceCluster ready
+|~10 min
+
+|MLflow + AI Pipelines setup
+|~3 min
+
+|Model image pull (`gpt-oss-20b` ~41 GB + vLLM ~15 GB)
+|~20 min
+
+|Model load + InferenceService ready
+|~5 min
+
+|Gen AI Playground (LlamaStackDistribution) ready
+|~5 min
+|===
 
 == Verification
 
