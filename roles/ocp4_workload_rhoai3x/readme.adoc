@@ -2,7 +2,7 @@
 
 == Overview
 
-AgnosticDv2 workload role that provisions a complete *Red Hat OpenShift AI (RHOAI) 3.3* demo environment on OpenShift 4 (AWS). When provisioning completes, you have a GPU-backed cluster running a live LLM that users can interact with through the RHOAI dashboard's Gen AI Playground, track experiments with MLflow, and build AI pipelines against — all without any manual configuration.
+AgnosticDv2 workload role that provisions a complete https://www.redhat.com/en/technologies/cloud-computing/openshift/openshift-ai[*Red Hat OpenShift AI (RHOAI) 3.3*] demo environment on OpenShift 4 (AWS). When provisioning completes, you have a GPU-backed cluster running a live LLM that users can interact with through the RHOAI dashboard's Gen AI Playground, track experiments with https://mlflow.org[MLflow], and build AI pipelines against — all without any manual configuration.
 
 This is an *opinionated* installation designed for the Red Hat Demo Platform. It makes deliberate choices about which RHOAI components to enable, which GPU instance type to use, and which model to serve — all tuned for a single-GPU demo environment. It deploys *one model end-to-end* out of the box (`gpt-oss-20b`). See <<changing-the-model>> to deploy a different model instead.
 
@@ -15,23 +15,23 @@ This is an *opinionated* installation designed for the Red Hat Demo Platform. It
 |GPU infrastructure
 |AWS GPU MachineSet (`g6e.4xlarge`, 1x NVIDIA L40S, 200 GB root volume)
 
-|NVIDIA GPU Operator
+|https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html[NVIDIA GPU Operator]
 |OLM, `stable` channel — driver managed automatically by OCP Driver Toolkit
 
 |Red Hat OpenShift AI
-|OLM, `stable-3.x` channel — Dashboard, Workbenches, KServe, AI Pipelines, LlamaStack, MLflow, Model Registry
+|OLM, `stable-3.x` channel — Dashboard, Workbenches, https://kserve.github.io/website/latest/[KServe], AI Pipelines, https://github.com/meta-llama/llama-stack[LlamaStack], https://mlflow.org[MLflow], Model Registry
 
 |Model serving
-|`gpt-oss-20b` via KServe InferenceService (RawDeployment mode, no Service Mesh required)
+|`gpt-oss-20b` via https://kserve.github.io/website/latest/[KServe] InferenceService (RawDeployment mode, no Service Mesh required)
 
 |Gen AI Playground
-|LlamaStackDistribution wired to the deployed model — accessible from the RHOAI dashboard
+|https://github.com/meta-llama/llama-stack[LlamaStack] Distribution wired to the deployed model — accessible from the RHOAI dashboard
 
 |AI Pipelines
-|DataSciencePipelineApplication in `rhoai-shared`, backed by MinIO
+|DataSciencePipelineApplication in `rhoai-shared`, backed by https://min.io[MinIO]
 
-|MLflow
-|MLflow instance for experiment tracking, backed by MinIO artifacts
+|https://mlflow.org[MLflow]
+|MLflow instance for experiment tracking, backed by https://min.io[MinIO] artifacts
 |===
 
 == Requirements
@@ -47,7 +47,7 @@ This is an *opinionated* installation designed for the Red Hat Demo Platform. It
 |Creates admin and student user accounts
 
 |https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_nfd[`ocp4_workload_nfd`]
-|Installs the Node Feature Discovery operator, which labels GPU nodes automatically
+|Installs the https://kubernetes-sigs.github.io/node-feature-discovery/[Node Feature Discovery] operator, which labels GPU nodes automatically
 
 |https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_minio[`ocp4_workload_minio`]
 |Deploys in-cluster S3 storage used by AI Pipelines and MLflow for artifact storage
@@ -167,13 +167,13 @@ Total provision time is approximately *60-90 minutes*, dominated by GPU node pro
 |MLflow + AI Pipelines setup
 |~3 min
 
-|Model image pull (`gpt-oss-20b` ~41 GB + vLLM ~15 GB)
+|Model image pull (`gpt-oss-20b` ~41 GB + https://docs.vllm.ai[vLLM] ~15 GB)
 |~20 min
 
 |Model load + InferenceService ready
 |~5 min
 
-|Gen AI Playground (LlamaStackDistribution) ready
+|Gen AI Playground (https://github.com/meta-llama/llama-stack[LlamaStack] Distribution) ready
 |~5 min
 |===
 
@@ -225,7 +225,7 @@ ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/model
 # HuggingFace:
 # ocp4_workload_rhoai3x_model_storage_uri: "hf://<org>/<repo>"
 
-# vLLM container image — see image selection table below
+# vLLM (https://docs.vllm.ai) container image — see image selection table below
 ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
 
 # Optional: extra vLLM CLI args
@@ -243,7 +243,7 @@ https://huggingface.co/RedHatAI[RedHatAI on Hugging Face] is the best starting p
 
 === Image selection
 
-Choose the vLLM image based on your model's quantization format, which is listed in the model card or in the model's `config.json` (`quantization_config.quant_type`).
+Choose the https://docs.vllm.ai[vLLM] image based on your model's quantization format, which is listed in the model card or in the model's `config.json` (`quantization_config.quant_type`).
 
 [cols="1,2,2"]
 |===
@@ -334,7 +334,7 @@ Variables that are most commonly overridden are shown first in each section. Ret
 |_(Advanced)_ Seconds between retries (max wait ≈ 20 minutes)
 |===
 
-=== NVIDIA GPU Operator
+=== https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html[NVIDIA GPU Operator]
 
 [cols="1,1,2"]
 |===
@@ -398,11 +398,11 @@ NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolk
 
 |`ocp4_workload_rhoai3x_kserve_models_as_service_management_state`
 |`Removed`
-|ModelMesh state — `Removed` enables KServe-only mode
+|ModelMesh state — `Removed` enables https://kserve.github.io/website/latest/[KServe]-only mode
 
 |`ocp4_workload_rhoai3x_kserve_raw_deployment_service_config`
 |`Headless`
-|KServe deployment mode — `Headless` = RawDeployment without Service Mesh or Serverless
+|https://kserve.github.io/website/latest/[KServe] deployment mode — `Headless` = RawDeployment without Service Mesh or Serverless
 
 |`ocp4_workload_rhoai3x_dsc_wait_retries`
 |`30`
@@ -421,7 +421,7 @@ NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolk
 
 |`ocp4_workload_rhoai3x_gen_ai_studio_enable`
 |`true`
-|Enable the Gen AI Studio Tech Preview feature in the RHOAI dashboard and create the LlamaStackDistribution
+|Enable the Gen AI Studio Tech Preview feature in the RHOAI dashboard and create the https://github.com/meta-llama/llama-stack[LlamaStack] Distribution
 
 |`ocp4_workload_rhoai3x_gen_ai_playground_name`
 |`lsd-genai-playground`
@@ -429,7 +429,7 @@ NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolk
 
 |`ocp4_workload_rhoai3x_gen_ai_playground_max_tokens`
 |`4096`
-|Max tokens passed to the vLLM provider in the LlamaStack configuration
+|Max tokens passed to the https://docs.vllm.ai[vLLM] provider in the https://github.com/meta-llama/llama-stack[LlamaStack] configuration
 
 |`ocp4_workload_rhoai3x_gen_ai_playground_wait_retries`
 |`20`
@@ -440,7 +440,7 @@ NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolk
 |_(Advanced)_ Seconds between retries
 |===
 
-=== MLflow
+=== https://mlflow.org[MLflow]
 
 [cols="1,1,2"]
 |===
@@ -528,7 +528,7 @@ NOTE: The MLflow CR is always deployed in `redhat-ods-applications` — the MLfl
 
 |`ocp4_workload_rhoai3x_model_serving_runtime_image`
 |`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
-|vLLM container image — see <<changing-the-model>> for image selection guidance
+|https://docs.vllm.ai[vLLM] container image — see <<changing-the-model>> for image selection guidance
 
 |`ocp4_workload_rhoai3x_model_extra_args`
 |`[]`
@@ -567,7 +567,7 @@ NOTE: The MLflow CR is always deployed in `redhat-ods-applications` — the MLfl
 |_(Advanced)_ Seconds between retries (max wait = 30 minutes)
 |===
 
-== MLflow instrumentation
+== https://mlflow.org[MLflow] instrumentation
 
 To track experiments from a workload running inside the cluster:
 
