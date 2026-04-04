@@ -216,6 +216,30 @@ ocp4_workload_rhoai3x_pipeline_minio_secret_key: "minio123"
 
 ---
 
+## MLflow
+
+### Access
+
+MLflow is deployed in `redhat-ods-applications` and exposed via path-based routing under the RHOAI data science gateway — no separate hostname needed.
+
+```
+https://data-science-gateway.apps.<cluster-domain>/mlflow
+```
+
+Also linked in the OCP console Application Menu → **OpenShift Self Managed Services → MLflow**.
+
+### Instrumenting workloads
+
+```bash
+export MLFLOW_TRACKING_TOKEN="$(oc whoami --show-token)"
+export MLFLOW_TRACKING_URI="https://data-science-gateway.apps.<cluster-domain>/mlflow"
+export MLFLOW_WORKSPACE="<your-namespace>"
+```
+
+> **Note:** The token is session-scoped — refresh it with `oc whoami --show-token` each time.
+
+---
+
 ## Verification After Deployment
 
 ```bash
