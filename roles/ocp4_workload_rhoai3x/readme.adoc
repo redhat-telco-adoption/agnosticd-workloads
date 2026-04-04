@@ -1,469 +1,61 @@
-= ocp4_workload_rhoai3x — Red Hat OpenShift AI 3.x
+= Red Hat OpenShift AI 3.x Demo — ocp4_workload_rhoai3x
 
 == Overview
 
-AgnosticDv2 workload role that provisions a *Red Hat OpenShift AI (RHOAI) 3.3* GPU demo environment on OpenShift 4 (AWS).
+AgnosticDv2 workload role that provisions a complete *Red Hat OpenShift AI (RHOAI) 3.3* demo environment on OpenShift 4 (AWS). When provisioning completes, you have a GPU-backed cluster running a live LLM that users can interact with through the RHOAI dashboard's Gen AI Playground, track experiments with MLflow, and build AI pipelines against — all without any manual configuration.
 
-This is an *opinionated* installation designed for the Red Hat Demo Platform. It makes deliberate choices about which RHOAI components to enable, which GPU instance type to use, and which model to serve — all tuned for a single-GPU demo. It deploys *one model end-to-end* out of the box (`gpt-oss-20b`), wired from GPU infrastructure through to model serving, Gen AI Playground, and MLflow experiment tracking. See <<changing-the-model>> to deploy a different model instead.
+This is an *opinionated* installation designed for the Red Hat Demo Platform. It makes deliberate choices about which RHOAI components to enable, which GPU instance type to use, and which model to serve — all tuned for a single-GPU demo environment. It deploys *one model end-to-end* out of the box (`gpt-oss-20b`). See <<changing-the-model>> to deploy a different model instead.
 
-=== Provisioning Order
+=== What Gets Deployed
 
-[source]
-----
-nfd_instance → gpu_machineset → nvidia_gpu_operator → rhoai_operator
-  → datasciencecluster → mlflow_instance → pipeline_app
-  → model_deployment → gen_ai_playground
-----
-
-=== Prerequisites (Stage 1)
-
-The following workloads must already be deployed before running this role:
-
-* `ocp4_workload_authentication_htpasswd` — admin user + student users
-* `ocp4_workload_nfd` — Node Feature Discovery operator (labels GPU nodes automatically)
-* `ocp4_workload_minio` — S3-compatible storage for model artifacts and pipeline logs
-
-=== What This Role Deploys
-
-. *NodeFeatureDiscovery instance* — Creates the `NodeFeatureDiscovery` CR in `openshift-nfd`, starting the NFD daemonset that labels GPU nodes with PCI feature labels needed by the GPU Operator.
-
-. *GPU MachineSet* — Clones an existing worker MachineSet on AWS, switches the instance type to a GPU instance (`g6e.4xlarge` by default), and provisions a 200 GB gp3 root volume. Pre-seeds the NFD PCI label on the MachineSet template so new GPU nodes are recognized immediately. Waits for nodes to reach `Ready` status.
-
-. *NVIDIA GPU Operator* — Installed via OLM from the `certified-operators` catalog (`stable` channel). Creates a `ClusterPolicy` with OCP Driver Toolkit enabled — the DTK automatically selects the correct NVIDIA driver version for the RHCOS kernel. Waits for `ClusterPolicy` to reach `ready` state and for `nvidia.com/gpu` to appear in node allocatable resources.
-
-. *RHOAI Operator* — Installed via OLM from `redhat-operators` (`stable-3.x` channel, AllNamespaces mode). Waits for the CSV to succeed.
-
-. *DataScienceCluster* — Enables: Dashboard, Workbenches, KServe (RawDeployment/Headless mode — no Service Mesh or Serverless required), AI Pipelines, LlamaStack Operator, MLflow Operator, and Model Registry. Patches `OdhDashboardConfig` to enable the Gen AI Studio Tech Preview feature flag, then restarts the dashboard.
-
-. *MLflow instance* — Creates an `MLflow` CR in `redhat-ods-applications` (the MLflow operator's fixed target namespace). Uses SQLite on a PVC for metadata and MinIO from Stage 1 for artifact storage. Accessible at `https://data-science-gateway.apps.<cluster-domain>/mlflow`.
-
-. *DataSciencePipelineApplication* — Pre-creates a shared AI Pipelines instance in the `rhoai-shared` project, backed by the MinIO instance from Stage 1.
-
-. *Model deployment* — Creates a `ServingRuntime` and `InferenceService` via KServe. Defaults to `gpt-oss-20b` served with the RHAIIS vLLM CUDA image, which natively handles mxfp4 quantization via the Marlin kernel. Waits for the InferenceService to reach `Ready` status.
-
-. *Gen AI Playground* — Creates a `LlamaStackDistribution` in `rhoai-shared`, wired to the deployed InferenceService, and backed by a ConfigMap with the full LlamaStack configuration (inference, vector I/O, agents, pipelines). Accessible from the RHOAI dashboard.
-
-== Variables
-
-=== NodeFeatureDiscovery
-
-[cols="1,1,2"]
+[cols="1,2"]
 |===
-|Variable |Default |Description
+|Component |Details
 
-|`ocp4_workload_rhoai3x_nfd_namespace`
-|`openshift-nfd`
-|Namespace where the NFD operator from Stage 1 is installed
+|GPU infrastructure
+|AWS GPU MachineSet (`g6e.4xlarge`, 1x NVIDIA L40S, 200 GB root volume)
 
-|`ocp4_workload_rhoai3x_nfd_instance_name`
-|`nfd-instance`
-|Name of the NodeFeatureDiscovery CR to create
+|NVIDIA GPU Operator
+|OLM, `stable` channel — driver managed automatically by OCP Driver Toolkit
+
+|Red Hat OpenShift AI
+|OLM, `stable-3.x` channel — Dashboard, Workbenches, KServe, AI Pipelines, LlamaStack, MLflow, Model Registry
+
+|Model serving
+|`gpt-oss-20b` via KServe InferenceService (RawDeployment mode, no Service Mesh required)
+
+|Gen AI Playground
+|LlamaStackDistribution wired to the deployed model — accessible from the RHOAI dashboard
+
+|AI Pipelines
+|DataSciencePipelineApplication in `rhoai-shared`, backed by MinIO
+
+|MLflow
+|MLflow instance for experiment tracking, backed by MinIO artifacts
 |===
 
-=== GPU MachineSet
+== Requirements
 
-[cols="1,1,2"]
+* OpenShift 4.16+ cluster on AWS (the cluster itself is not provisioned by this role)
+* The following prerequisite workloads must run before this role:
+
+[cols="1,2"]
 |===
-|Variable |Default |Description
+|Workload |Purpose
 
-|`ocp4_workload_rhoai3x_gpu_instance_type`
-|`g6e.4xlarge`
-|AWS instance type for GPU nodes
+|`ocp4_workload_authentication_htpasswd`
+|Creates admin and student user accounts
 
-|`ocp4_workload_rhoai3x_gpu_node_count`
-|`1`
-|Number of GPU node replicas to provision
+|`ocp4_workload_nfd`
+|Installs the Node Feature Discovery operator, which labels GPU nodes automatically
 
-|`ocp4_workload_rhoai3x_gpu_root_volume_size`
-|`200`
-|Root EBS volume size in GB (minimum 200 for large OCI model images)
-
-|`ocp4_workload_rhoai3x_gpu_root_volume_type`
-|`gp3`
-|EBS volume type
-
-|`ocp4_workload_rhoai3x_gpu_machineset_name_suffix`
-|`gpu`
-|Suffix appended to the cluster infra ID to form the GPU MachineSet name
-
-|`ocp4_workload_rhoai3x_gpu_node_ready_retries`
-|`40`
-|Retry count when waiting for GPU nodes to become Ready
-
-|`ocp4_workload_rhoai3x_gpu_node_ready_delay`
-|`30`
-|Seconds between retries (max wait ≈ 20 minutes)
+|`ocp4_workload_minio`
+|Deploys in-cluster S3 storage used by AI Pipelines and MLflow for artifact storage
 |===
-
-=== NVIDIA GPU Operator
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_nvidia_gpu_operator_install`
-|`true`
-|Set to `false` to skip GPU operator installation entirely
-
-|`ocp4_workload_rhoai3x_nvidia_gpu_operator_channel`
-|`stable`
-|OLM channel for the NVIDIA GPU Operator
-
-|`ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace`
-|`nvidia-gpu-operator`
-|Namespace where the GPU operator is installed
-
-|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries`
-|`30`
-|Retry count when waiting for CSV / ClusterPolicy
-
-|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay`
-|`20`
-|Seconds between retries
-|===
-
-NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolkit (DTK). Do not set `driver.version`, `driver.repository`, or `driver.image` in the ClusterPolicy when `use_ocp_driver_toolkit: true` — doing so causes the operator to reconcile the DaemonSet to a mismatched `k8s-driver-manager` version and fail.
-
-=== RHOAI Operator
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_operator_channel`
-|`stable-3.x`
-|OLM channel for the RHOAI operator
-
-|`ocp4_workload_rhoai3x_operator_namespace`
-|`redhat-ods-operator`
-|Namespace where the RHOAI operator is installed
-
-|`ocp4_workload_rhoai3x_operator_csv_wait_retries`
-|`45`
-|Retry count when waiting for the RHOAI CSV
-
-|`ocp4_workload_rhoai3x_operator_csv_wait_delay`
-|`20`
-|Seconds between retries
-|===
-
-=== DataScienceCluster
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_dsc_name`
-|`default-dsc`
-|Name of the DataScienceCluster CR
-
-|`ocp4_workload_rhoai3x_kserve_models_as_service_management_state`
-|`Removed`
-|ModelMesh state — `Removed` enables KServe-only mode
-
-|`ocp4_workload_rhoai3x_kserve_raw_deployment_service_config`
-|`Headless`
-|KServe deployment mode — `Headless` = RawDeployment without Service Mesh or Serverless
-
-|`ocp4_workload_rhoai3x_dsc_wait_retries`
-|`30`
-|Retry count when waiting for DataScienceCluster Ready status
-
-|`ocp4_workload_rhoai3x_dsc_wait_delay`
-|`20`
-|Seconds between retries
-|===
-
-=== Gen AI Studio (Playground)
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_gen_ai_studio_enable`
-|`true`
-|Enable the Gen AI Studio Tech Preview feature in the RHOAI dashboard. Also creates the LlamaStackDistribution.
-
-|`ocp4_workload_rhoai3x_gen_ai_playground_name`
-|`lsd-genai-playground`
-|Name of the LlamaStackDistribution CR
-
-|`ocp4_workload_rhoai3x_gen_ai_playground_max_tokens`
-|`4096`
-|Max tokens passed to the vLLM provider in the LlamaStack config
-
-|`ocp4_workload_rhoai3x_gen_ai_playground_wait_retries`
-|`20`
-|Retry count when waiting for LlamaStackDistribution Ready
-
-|`ocp4_workload_rhoai3x_gen_ai_playground_wait_delay`
-|`15`
-|Seconds between retries
-|===
-
-=== MLflow
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_mlflow_deploy`
-|`true`
-|Set to `false` to skip MLflow deployment
-
-|`ocp4_workload_rhoai3x_mlflow_name`
-|`mlflow`
-|Name of the MLflow CR
-
-|`ocp4_workload_rhoai3x_mlflow_artifact_bucket`
-|`rhoai-models`
-|MinIO bucket for MLflow artifact storage (must exist — created by `ocp4_workload_minio`)
-
-|`ocp4_workload_rhoai3x_mlflow_storage_size`
-|`10Gi`
-|PVC size for the SQLite metadata store
-
-|`ocp4_workload_rhoai3x_mlflow_wait_retries`
-|`20`
-|Retry count when waiting for MLflow Available condition
-
-|`ocp4_workload_rhoai3x_mlflow_wait_delay`
-|`10`
-|Seconds between retries
-|===
-
-NOTE: The MLflow CR is always created in `redhat-ods-applications` — the MLflow operator's `targetNamespace` is hardcoded and cannot be overridden.
-
-=== DataSciencePipelineApplication
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_pipeline_app_configure`
-|`true`
-|Set to `false` to skip pipeline application creation
-
-|`ocp4_workload_rhoai3x_pipeline_app_project`
-|`rhoai-shared`
-|OpenShift project for the shared pipeline application and model namespace
-
-|`ocp4_workload_rhoai3x_pipeline_minio_endpoint`
-|`http://minio.minio.svc.cluster.local:9000`
-|MinIO endpoint URL (must match Stage 1 MinIO deployment)
-
-|`ocp4_workload_rhoai3x_pipeline_minio_bucket`
-|`rhoai-pipelines`
-|MinIO bucket for pipeline artifacts
-
-|`ocp4_workload_rhoai3x_pipeline_minio_access_key`
-|`minio`
-|MinIO access key
-
-|`ocp4_workload_rhoai3x_pipeline_minio_secret_key`
-|`minio123`
-|MinIO secret key — *override in your vars file*
-|===
-
-=== Model Deployment
-
-[cols="1,1,2"]
-|===
-|Variable |Default |Description
-
-|`ocp4_workload_rhoai3x_model_deploy`
-|`true`
-|Set to `false` to skip model deployment entirely
-
-|`ocp4_workload_rhoai3x_model_namespace`
-|`{{ ocp4_workload_rhoai3x_pipeline_app_project }}`
-|Namespace to deploy the model into (must be a Data Science Project)
-
-|`ocp4_workload_rhoai3x_model_name`
-|`gpt-oss-20b`
-|Model name — also used as InferenceService and ServingRuntime name
-
-|`ocp4_workload_rhoai3x_model_display_name`
-|`gpt-oss-20b`
-|Display name shown in the RHOAI dashboard
-
-|`ocp4_workload_rhoai3x_model_storage_uri`
-|`oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5`
-|Model storage URI — OCI ModelCar, S3 (`s3://`), or HuggingFace (`hf://`)
-
-|`ocp4_workload_rhoai3x_model_serving_runtime_image`
-|`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
-|vLLM container image — must be the RHAIIS image for mxfp4 quantization support
-
-|`ocp4_workload_rhoai3x_model_extra_args`
-|`[]`
-|Additional vLLM CLI args (e.g. `["--max-model-len=8192"]`)
-
-|`ocp4_workload_rhoai3x_model_gpu_count`
-|`1`
-|Number of GPUs to request per replica
-
-|`ocp4_workload_rhoai3x_model_cpu_requests`
-|`1`
-|CPU requests for the model container
-
-|`ocp4_workload_rhoai3x_model_cpu_limits`
-|`2`
-|CPU limits for the model container
-
-|`ocp4_workload_rhoai3x_model_memory_requests`
-|`4Gi`
-|Memory requests for the model container
-
-|`ocp4_workload_rhoai3x_model_memory_limits`
-|`8Gi`
-|Memory limits for the model container
-
-|`ocp4_workload_rhoai3x_model_min_replicas`
-|`1`
-|Minimum InferenceService replicas
-
-|`ocp4_workload_rhoai3x_model_max_replicas`
-|`1`
-|Maximum InferenceService replicas
-
-|`ocp4_workload_rhoai3x_model_wait_ready`
-|`true`
-|Wait for InferenceService Ready before continuing. Set to `false` to fire-and-forget (large models can take 20+ minutes).
-
-|`ocp4_workload_rhoai3x_model_ready_retries`
-|`60`
-|Retry count when waiting for InferenceService Ready
-
-|`ocp4_workload_rhoai3x_model_ready_delay`
-|`30`
-|Seconds between retries (max wait = 30 minutes)
-|===
-
-NOTE: `gpt-oss-20b:1.x` uses mxfp4 (NVIDIA MX Microscaling FP4) quantization. The generic `quay.io/modh/vllm` image does not support mxfp4. You must use the RHAIIS vLLM image. Do not pass `--quantization` — the image auto-detects it from the model config.
-
-[[changing-the-model]]
-== Changing the Deployed Model
-
-The role deploys a single model end-to-end. To use a different model, override the following variables in your vars file:
-
-[source,yaml]
-----
-# Model identity — used as the InferenceService name, ServingRuntime name, and display name
-ocp4_workload_rhoai3x_model_name: "my-model"
-ocp4_workload_rhoai3x_model_display_name: "My Model"
-
-# Where to pull the model from
-# OCI ModelCar (Red Hat registry):
-ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-<model>:<tag>"
-# S3 bucket:
-# ocp4_workload_rhoai3x_model_storage_uri: "s3://<bucket>/<path>"
-# HuggingFace:
-# ocp4_workload_rhoai3x_model_storage_uri: "hf://<org>/<repo>"
-
-# vLLM container image — only change this if not using an mxfp4 model
-# For standard fp16/bf16 models the generic RHOAI vLLM image works:
-# ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
-# For mxfp4 quantized models (e.g. gpt-oss-20b) the RHAIIS image is required:
-ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
-
-# Optional: extra vLLM CLI args
-# ocp4_workload_rhoai3x_model_extra_args: ["--max-model-len=8192"]
-
-# GPU and compute sizing — adjust to fit your model and GPU
-ocp4_workload_rhoai3x_model_gpu_count: "1"
-ocp4_workload_rhoai3x_model_memory_requests: "4Gi"
-ocp4_workload_rhoai3x_model_memory_limits: "8Gi"
-----
-
-=== Image selection guidance
-
-[cols="1,2,1"]
-|===
-|Model quantization |Image to use |Notes
-
-|mxfp4 (e.g. `gpt-oss-20b:1.x`)
-|`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
-|Required — generic images do not support mxfp4. Do not pass `--quantization`.
-
-|fp16 / bf16 (standard HuggingFace models)
-|`quay.io/modh/vllm:rhoai-2.25-cuda`
-|Standard RHOAI vLLM image, works with most public models.
-
-|GPTQ / AWQ
-|`quay.io/modh/vllm:rhoai-2.25-cuda`
-|Pass `--quantization gptq` or `--quantization awq` via `model_extra_args`.
-|===
-
-=== GPU sizing guidance
-
-The default `g6e.4xlarge` has 1x NVIDIA L40S (48 GB VRAM). For larger models or tensor parallelism:
-
-[cols="1,1,1,2"]
-|===
-|Instance type |GPUs |VRAM |Suitable for
-
-|`g6e.4xlarge`
-|1x L40S
-|48 GB
-|Models up to ~20B parameters (mxfp4/fp4), ~7B in fp16
-
-|`g6e.12xlarge`
-|4x L40S
-|192 GB
-|Models up to 70B in fp16; use `--tensor-parallel-size=4`
-
-|`g6e.48xlarge`
-|8x L40S
-|384 GB
-|Models up to 405B in fp16; use `--tensor-parallel-size=8`
-|===
-
-For multi-GPU deployments also set:
-
-[source,yaml]
-----
-ocp4_workload_rhoai3x_gpu_instance_type: "g6e.12xlarge"
-ocp4_workload_rhoai3x_model_gpu_count: "4"
-ocp4_workload_rhoai3x_model_extra_args: ["--tensor-parallel-size=4"]
-----
-
-== Access
-
-=== RHOAI Dashboard
-
-RHOAI 3.3 uses an Ingress Gateway instead of a Route. The dashboard is not accessible via a Route in `redhat-ods-applications`.
-
-[source,bash]
-----
-DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
-echo "https://data-science-gateway.${DOMAIN}"
-----
-
-=== MLflow
-
-Exposed via path-based routing under the same gateway. Also linked in the OCP console Application Menu → *OpenShift Self Managed Services → MLflow*.
-
-[source,bash]
-----
-DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
-echo "https://data-science-gateway.${DOMAIN}/mlflow"
-----
-
-To instrument workloads with MLflow tracking:
-
-[source,bash]
-----
-export MLFLOW_TRACKING_TOKEN="$(oc whoami --show-token)"
-export MLFLOW_TRACKING_URI="https://data-science-gateway.${DOMAIN}/mlflow"
-export MLFLOW_WORKSPACE="<your-namespace>"
-----
-
-NOTE: The token is session-scoped. Refresh it with `oc whoami --show-token` each time.
 
 == Usage
 
-This role is deployed using https://github.com/agnosticd/agnosticd-v2[AgnosticDv2], a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc[AgnosticDv2 setup guide] to install the `agd` CLI and configure secrets before running this role.
+This role is deployed using https://github.com/agnosticd/agnosticd-v2[AgnosticDv2], a framework for provisioning cloud-based demo and workshop environments. AgnosticDv2 handles cluster connectivity, variable injection, and workload lifecycle (`provision` / `destroy`). See the https://github.com/agnosticd/agnosticd-v2/blob/main/docs/setup.adoc[AgnosticDv2 setup guide] to install the `agd` CLI and configure credentials before running this role.
 
 === Base environment
 
@@ -471,7 +63,7 @@ This role has been tested against the *AWS with OpenShift Open Environment* on t
 
 === Sample vars file
 
-Create a vars file (e.g. `agnosticd-v2-vars/openshift-workloads-rhoai.yml`). The `openshift-workloads` config deploys the workloads listed under `workloads:` in sequence to the target cluster. NFD, MinIO, and htpasswd auth must be included before this role.
+Create a vars file (e.g. `agnosticd-v2-vars/openshift-workloads-rhoai.yml`). The `openshift-workloads` config deploys the workloads listed under `workloads:` in sequence to the target cluster.
 
 [source,yaml]
 ----
@@ -535,7 +127,7 @@ ocp4_workload_rhoai3x_gpu_node_count: 1
 ocp4_workload_rhoai3x_pipeline_minio_access_key: "{{ ocp4_workload_minio_root_user }}"
 ocp4_workload_rhoai3x_pipeline_minio_secret_key: "{{ ocp4_workload_minio_root_password }}"
 
-# Model to deploy (defaults shown — override to change the model)
+# Model to deploy (defaults shown — override to change the model, see README)
 ocp4_workload_rhoai3x_model_name: "gpt-oss-20b"
 ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5"
 ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
@@ -555,7 +147,7 @@ ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vl
 ./bin/agd destroy --guid <your-guid> --config openshift-workloads-rhoai --account <your-account>
 ----
 
-=== Provision Timing
+=== Provision timing
 
 Total provision time is approximately *60-90 minutes*, dominated by GPU node provisioning and model image pulls.
 
@@ -585,11 +177,414 @@ Total provision time is approximately *60-90 minutes*, dominated by GPU node pro
 |~5 min
 |===
 
+=== Post-provision
+
+When provisioning completes, the following are available:
+
+[cols="1,2"]
+|===
+|Resource |URL
+
+|RHOAI Dashboard
+|`https://data-science-gateway.apps.<cluster-domain>`
+
+|Gen AI Playground
+|RHOAI Dashboard → *AI & ML → AI Playground*
+
+|MLflow
+|`https://data-science-gateway.apps.<cluster-domain>/mlflow` +
+Also linked in the OCP console Application Menu → *OpenShift Self Managed Services → MLflow*
+
+|OpenShift Console
+|`https://console-openshift-console.apps.<cluster-domain>`
+|===
+
+Retrieve the cluster domain at any time with:
+
+[source,bash]
+----
+oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}'
+----
+
+[[changing-the-model]]
+== Changing the Deployed Model
+
+The role deploys a single model end-to-end. To use a different model, override these variables in your vars file:
+
+[source,yaml]
+----
+# Model identity — used as the InferenceService name, ServingRuntime name, and display name
+ocp4_workload_rhoai3x_model_name: "my-model"
+ocp4_workload_rhoai3x_model_display_name: "My Model"
+
+# Where to pull the model from
+# OCI ModelCar (Red Hat registry):
+ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/modelcar-<model>:<tag>"
+# S3 bucket:
+# ocp4_workload_rhoai3x_model_storage_uri: "s3://<bucket>/<path>"
+# HuggingFace:
+# ocp4_workload_rhoai3x_model_storage_uri: "hf://<org>/<repo>"
+
+# vLLM container image — see image selection table below
+ocp4_workload_rhoai3x_model_serving_runtime_image: "quay.io/modh/vllm:rhoai-2.25-cuda"
+
+# Optional: extra vLLM CLI args
+# ocp4_workload_rhoai3x_model_extra_args: ["--max-model-len=8192"]
+
+# GPU and compute sizing — adjust to fit your model
+ocp4_workload_rhoai3x_model_gpu_count: "1"
+ocp4_workload_rhoai3x_model_memory_requests: "4Gi"
+ocp4_workload_rhoai3x_model_memory_limits: "8Gi"
+----
+
+=== Finding a model
+
+https://huggingface.co/RedHatAI[RedHatAI on Hugging Face] is the best starting point for Red Hat validated models. Each model card documents the quantization format, context length, and hardware requirements — check those before selecting an image (see below).
+
+=== Image selection
+
+Choose the vLLM image based on your model's quantization format, which is listed in the model card or in the model's `config.json` (`quantization_config.quant_type`).
+
+[cols="1,2,2"]
+|===
+|Quantization |Image |Notes
+
+|mxfp4 (e.g. `gpt-oss-20b:1.x`)
+|`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
+|Required — generic images do not support mxfp4. Do *not* pass `--quantization`; the image auto-detects it.
+
+|fp16 / bf16 (standard models)
+|`quay.io/modh/vllm:rhoai-2.25-cuda`
+|Works with most public HuggingFace models.
+
+|GPTQ / AWQ
+|`quay.io/modh/vllm:rhoai-2.25-cuda`
+|Pass `--quantization gptq` or `--quantization awq` via `model_extra_args`.
+|===
+
+=== GPU sizing
+
+The default `g6e.4xlarge` has 1x NVIDIA L40S (48 GB VRAM). For larger models:
+
+[cols="1,1,1,2"]
+|===
+|Instance type |GPUs |VRAM |Suitable for
+
+|`g6e.4xlarge`
+|1x L40S
+|48 GB
+|Up to ~20B parameters (mxfp4/fp4), ~7B in fp16
+
+|`g6e.12xlarge`
+|4x L40S
+|192 GB
+|Up to 70B in fp16 — use `--tensor-parallel-size=4`
+
+|`g6e.48xlarge`
+|8x L40S
+|384 GB
+|Up to 405B in fp16 — use `--tensor-parallel-size=8`
+|===
+
+For multi-GPU deployments, also set:
+
+[source,yaml]
+----
+ocp4_workload_rhoai3x_gpu_instance_type: "g6e.12xlarge"
+ocp4_workload_rhoai3x_model_gpu_count: "4"
+ocp4_workload_rhoai3x_model_extra_args: ["--tensor-parallel-size=4"]
+----
+
+== Variables
+
+Variables that are most commonly overridden are shown first in each section. Retry and delay tuning variables are listed at the end of each table and rarely need to change.
+
+=== GPU MachineSet
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_gpu_instance_type`
+|`g6e.4xlarge`
+|AWS instance type for GPU nodes
+
+|`ocp4_workload_rhoai3x_gpu_node_count`
+|`1`
+|Number of GPU node replicas to provision
+
+|`ocp4_workload_rhoai3x_gpu_root_volume_size`
+|`200`
+|Root EBS volume size in GB — minimum 200 to accommodate large model images
+
+|`ocp4_workload_rhoai3x_gpu_root_volume_type`
+|`gp3`
+|EBS volume type
+
+|`ocp4_workload_rhoai3x_gpu_machineset_name_suffix`
+|`gpu`
+|Suffix appended to the cluster infra ID to form the GPU MachineSet name
+
+|`ocp4_workload_rhoai3x_gpu_node_ready_retries`
+|`40`
+|_(Advanced)_ Retry count when waiting for GPU nodes to become Ready
+
+|`ocp4_workload_rhoai3x_gpu_node_ready_delay`
+|`30`
+|_(Advanced)_ Seconds between retries (max wait ≈ 20 minutes)
+|===
+
+=== NVIDIA GPU Operator
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_install`
+|`true`
+|Set to `false` to skip GPU operator installation (e.g. on clusters with pre-installed GPU support)
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_channel`
+|`stable`
+|OLM channel for the NVIDIA GPU Operator
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace`
+|`nvidia-gpu-operator`
+|Namespace where the GPU operator is installed
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_retries`
+|`30`
+|_(Advanced)_ Retry count when waiting for CSV / ClusterPolicy
+
+|`ocp4_workload_rhoai3x_nvidia_gpu_operator_csv_wait_delay`
+|`20`
+|_(Advanced)_ Seconds between retries
+|===
+
+NOTE: The NVIDIA driver version is managed automatically by the OCP Driver Toolkit (DTK). Do not set `driver.version`, `driver.repository`, or `driver.image` in the ClusterPolicy — doing so causes the operator to reconcile the DaemonSet to a mismatched driver manager version and fail.
+
+=== RHOAI Operator
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_operator_channel`
+|`stable-3.x`
+|OLM channel for the RHOAI operator
+
+|`ocp4_workload_rhoai3x_operator_namespace`
+|`redhat-ods-operator`
+|Namespace where the RHOAI operator is installed
+
+|`ocp4_workload_rhoai3x_operator_csv_wait_retries`
+|`45`
+|_(Advanced)_ Retry count when waiting for the RHOAI CSV
+
+|`ocp4_workload_rhoai3x_operator_csv_wait_delay`
+|`20`
+|_(Advanced)_ Seconds between retries
+|===
+
+=== DataScienceCluster
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_dsc_name`
+|`default-dsc`
+|Name of the DataScienceCluster CR
+
+|`ocp4_workload_rhoai3x_kserve_models_as_service_management_state`
+|`Removed`
+|ModelMesh state — `Removed` enables KServe-only mode
+
+|`ocp4_workload_rhoai3x_kserve_raw_deployment_service_config`
+|`Headless`
+|KServe deployment mode — `Headless` = RawDeployment without Service Mesh or Serverless
+
+|`ocp4_workload_rhoai3x_dsc_wait_retries`
+|`30`
+|_(Advanced)_ Retry count when waiting for DataScienceCluster Ready status
+
+|`ocp4_workload_rhoai3x_dsc_wait_delay`
+|`20`
+|_(Advanced)_ Seconds between retries
+|===
+
+=== Gen AI Studio (Playground)
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_gen_ai_studio_enable`
+|`true`
+|Enable the Gen AI Studio Tech Preview feature in the RHOAI dashboard and create the LlamaStackDistribution
+
+|`ocp4_workload_rhoai3x_gen_ai_playground_name`
+|`lsd-genai-playground`
+|Name of the LlamaStackDistribution CR
+
+|`ocp4_workload_rhoai3x_gen_ai_playground_max_tokens`
+|`4096`
+|Max tokens passed to the vLLM provider in the LlamaStack configuration
+
+|`ocp4_workload_rhoai3x_gen_ai_playground_wait_retries`
+|`20`
+|_(Advanced)_ Retry count when waiting for LlamaStackDistribution Ready
+
+|`ocp4_workload_rhoai3x_gen_ai_playground_wait_delay`
+|`15`
+|_(Advanced)_ Seconds between retries
+|===
+
+=== MLflow
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_mlflow_deploy`
+|`true`
+|Set to `false` to skip MLflow deployment
+
+|`ocp4_workload_rhoai3x_mlflow_name`
+|`mlflow`
+|Name of the MLflow CR
+
+|`ocp4_workload_rhoai3x_mlflow_artifact_bucket`
+|`rhoai-models`
+|MinIO bucket for MLflow artifact storage (must exist — created by `ocp4_workload_minio`)
+
+|`ocp4_workload_rhoai3x_mlflow_storage_size`
+|`10Gi`
+|PVC size for the SQLite metadata store
+
+|`ocp4_workload_rhoai3x_mlflow_wait_retries`
+|`20`
+|_(Advanced)_ Retry count when waiting for MLflow Available condition
+
+|`ocp4_workload_rhoai3x_mlflow_wait_delay`
+|`10`
+|_(Advanced)_ Seconds between retries
+|===
+
+NOTE: The MLflow CR is always deployed in `redhat-ods-applications` — the MLflow operator's target namespace is hardcoded and cannot be overridden.
+
+=== AI Pipelines
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_pipeline_app_configure`
+|`true`
+|Set to `false` to skip pipeline application creation
+
+|`ocp4_workload_rhoai3x_pipeline_app_project`
+|`rhoai-shared`
+|OpenShift project for the shared pipeline application and model namespace
+
+|`ocp4_workload_rhoai3x_pipeline_minio_endpoint`
+|`http://minio.minio.svc.cluster.local:9000`
+|MinIO endpoint URL (must match the `ocp4_workload_minio` deployment)
+
+|`ocp4_workload_rhoai3x_pipeline_minio_bucket`
+|`rhoai-pipelines`
+|MinIO bucket for pipeline artifacts
+
+|`ocp4_workload_rhoai3x_pipeline_minio_access_key`
+|`minio`
+|MinIO access key
+
+|`ocp4_workload_rhoai3x_pipeline_minio_secret_key`
+|`minio123`
+|MinIO secret key — *always override in your vars file*
+|===
+
+=== Model Deployment
+
+[cols="1,1,2"]
+|===
+|Variable |Default |Description
+
+|`ocp4_workload_rhoai3x_model_deploy`
+|`true`
+|Set to `false` to skip model deployment entirely
+
+|`ocp4_workload_rhoai3x_model_name`
+|`gpt-oss-20b`
+|Model name — used as the InferenceService and ServingRuntime name
+
+|`ocp4_workload_rhoai3x_model_display_name`
+|`gpt-oss-20b`
+|Display name shown in the RHOAI dashboard
+
+|`ocp4_workload_rhoai3x_model_storage_uri`
+|`oci://registry.redhat.io/rhelai1/modelcar-gpt-oss-20b:1.5`
+|Model storage URI — OCI ModelCar, S3 (`s3://`), or HuggingFace (`hf://`)
+
+|`ocp4_workload_rhoai3x_model_serving_runtime_image`
+|`registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144`
+|vLLM container image — see <<changing-the-model>> for image selection guidance
+
+|`ocp4_workload_rhoai3x_model_extra_args`
+|`[]`
+|Additional vLLM CLI args (e.g. `["--max-model-len=8192"]`)
+
+|`ocp4_workload_rhoai3x_model_namespace`
+|`rhoai-shared`
+|Namespace to deploy the model into (must be a Data Science Project)
+
+|`ocp4_workload_rhoai3x_model_gpu_count`
+|`1`
+|Number of GPUs to request per replica
+
+|`ocp4_workload_rhoai3x_model_cpu_requests` / `_limits`
+|`1` / `2`
+|CPU requests and limits for the model container
+
+|`ocp4_workload_rhoai3x_model_memory_requests` / `_limits`
+|`4Gi` / `8Gi`
+|Memory requests and limits for the model container
+
+|`ocp4_workload_rhoai3x_model_min_replicas` / `_max_replicas`
+|`1` / `1`
+|InferenceService replica bounds
+
+|`ocp4_workload_rhoai3x_model_wait_ready`
+|`true`
+|Wait for InferenceService Ready before continuing. Set to `false` to fire-and-forget.
+
+|`ocp4_workload_rhoai3x_model_ready_retries`
+|`60`
+|_(Advanced)_ Retry count when waiting for InferenceService Ready
+
+|`ocp4_workload_rhoai3x_model_ready_delay`
+|`30`
+|_(Advanced)_ Seconds between retries (max wait = 30 minutes)
+|===
+
+== MLflow instrumentation
+
+To track experiments from a workload running inside the cluster:
+
+[source,bash]
+----
+export MLFLOW_TRACKING_TOKEN="$(oc whoami --show-token)"
+export MLFLOW_TRACKING_URI="https://data-science-gateway.apps.<cluster-domain>/mlflow"
+export MLFLOW_WORKSPACE="<your-namespace>"
+----
+
+NOTE: The token is session-scoped. Refresh it with `oc whoami --show-token` each time.
+
 == Verification
 
 [source,bash]
 ----
-# GPU node — check Ready and nvidia.com/gpu allocatable
+# GPU node — Ready and nvidia.com/gpu allocatable
 oc get nodes -l nvidia.com/gpu.present=true
 oc get node <gpu-node> -o jsonpath='{.status.allocatable.nvidia\.com/gpu}'
 
@@ -600,9 +595,8 @@ oc get clusterpolicy gpu-cluster-policy -o jsonpath='{.status.state}'
 # RHOAI Operator
 oc get csv -n redhat-ods-operator | grep rhods
 
-# DataScienceCluster — check all Ready components
-oc get datasciencecluster default-dsc -o jsonpath='{.status.conditions}' | \
-  python3 -c "import sys,json; [print(c['type'],c['status']) for c in json.load(sys.stdin)]"
+# DataScienceCluster component status
+oc get datasciencecluster default-dsc -o wide
 
 # Model serving
 oc get inferenceservice -n rhoai-shared
