@@ -118,6 +118,28 @@ ocp4_workload_rhoai3x_dsc_wait_retries: 30
 ocp4_workload_rhoai3x_dsc_wait_delay: 20
 
 # ---------------------------------------------------------------------------
+# MLflow instance (optional)
+# Deployed in redhat-ods-applications (operator's fixed targetNamespace).
+# Uses SQLite on a PVC for metadata and MinIO from Stage 1 for artifacts.
+# ---------------------------------------------------------------------------
+
+# Set to false to skip MLflow deployment
+ocp4_workload_rhoai3x_mlflow_deploy: true
+
+# Name of the MLflow CR
+ocp4_workload_rhoai3x_mlflow_name: "mlflow"
+
+# S3 bucket for MLflow artifacts — must exist in MinIO (created by ocp4_workload_minio)
+ocp4_workload_rhoai3x_mlflow_artifact_bucket: "rhoai-models"
+
+# PVC size for SQLite metadata store
+ocp4_workload_rhoai3x_mlflow_storage_size: "10Gi"
+
+# Retries / delay for waiting on MLflow Available condition
+ocp4_workload_rhoai3x_mlflow_wait_retries: 20
+ocp4_workload_rhoai3x_mlflow_wait_delay: 10
+
+# ---------------------------------------------------------------------------
 # DataSciencePipelineApplication (optional)
 # Pre-creates an AI Pipelines instance pointing at the MinIO from Stage 1.
 # ---------------------------------------------------------------------------

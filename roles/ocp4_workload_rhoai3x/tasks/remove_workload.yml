@@ -15,7 +15,17 @@
     name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_name }}"
     namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
 
-# 1. InferenceService and ServingRuntime
+# 1. MLflow instance
+- name: Remove MLflow instance
+  when: ocp4_workload_rhoai3x_mlflow_deploy | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: mlflow.opendatahub.io/v1
+    kind: MLflow
+    name: "{{ ocp4_workload_rhoai3x_mlflow_name }}"
+    namespace: redhat-ods-applications
+
+# 2. InferenceService and ServingRuntime
 - name: Remove InferenceService
   when: ocp4_workload_rhoai3x_model_deploy | bool
   kubernetes.core.k8s:
@@ -34,7 +44,7 @@
     name: "{{ ocp4_workload_rhoai3x_model_serving_runtime_name }}"
     namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
 
-# 2. DataSciencePipelineApplication
+# 3. DataSciencePipelineApplication
 - name: Remove DataSciencePipelineApplication
   when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
   kubernetes.core.k8s:
@@ -61,7 +71,7 @@
     kind: Namespace
     name: "{{ ocp4_workload_rhoai3x_pipeline_app_project }}"
 
-# 3. DataScienceCluster
+# 4. DataScienceCluster
 - name: Remove DataScienceCluster CR
   kubernetes.core.k8s:
     state: absent
@@ -79,7 +89,7 @@
   retries: 20
   delay: 15
 
-# 4. RHOAI Operator
+# 5. RHOAI Operator
 - name: Remove RHOAI Subscription
   kubernetes.core.k8s:
     state: absent
@@ -140,7 +150,7 @@
     kind: Namespace
     name: redhat-ods-monitoring
 
-# 5. NVIDIA GPU Operator
+# 6. NVIDIA GPU Operator
 - name: Remove NVIDIA GPU Operator resources
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
   block:
@@ -200,7 +210,7 @@
       kind: Namespace
       name: "{{ ocp4_workload_rhoai3x_nvidia_gpu_operator_namespace }}"
 
-# 6. NodeFeatureDiscovery instance and operator
+# 7. NodeFeatureDiscovery instance and operator
 # ocp4_workload_nfd remove_workload is a no-op upstream, so we own full NFD cleanup here
 - name: Remove NodeFeatureDiscovery instance
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
@@ -231,7 +241,7 @@
     kind: Namespace
     name: "{{ ocp4_workload_rhoai3x_nfd_namespace }}"
 
-# 7. GPU MachineSet — scale to 0 first, then delete
+# 8. GPU MachineSet — scale to 0 first, then delete
 - name: Remove GPU MachineSet
   when: ocp4_workload_rhoai3x_nvidia_gpu_operator_install | bool
   block:

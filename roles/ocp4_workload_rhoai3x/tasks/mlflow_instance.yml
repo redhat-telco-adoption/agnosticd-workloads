@@ -1,0 +1,52 @@
+---
+# ---------------------------------------------------------------------------
+# MLflow instance via the MLflow Operator (part of RHOAI 3.3+)
+# The operator's targetNamespace is hardcoded to redhat-ods-applications,
+# so the MLflow CR must be created there regardless of where the model runs.
+# Storage: SQLite on a PVC mounted at /mlflow (four-slash absolute URI).
+# Artifacts: S3 bucket on MinIO from Stage 1.
+# ---------------------------------------------------------------------------
+
+- name: Create MLflow instance
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: mlflow.opendatahub.io/v1
+      kind: MLflow
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_mlflow_name }}"
+        namespace: redhat-ods-applications
+        labels:
+          opendatahub.io/dashboard: "true"
+      spec:
+        backendStoreUri: "sqlite:////mlflow/mlflow.db"
+        defaultArtifactRoot: "s3://{{ ocp4_workload_rhoai3x_mlflow_artifact_bucket }}/mlflow"
+        storage:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: "{{ ocp4_workload_rhoai3x_mlflow_storage_size }}"
+        env:
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: "{{ ocp4_workload_rhoai3x_pipeline_minio_endpoint }}"
+        - name: AWS_ACCESS_KEY_ID
+          value: "{{ ocp4_workload_rhoai3x_pipeline_minio_access_key }}"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "{{ ocp4_workload_rhoai3x_pipeline_minio_secret_key }}"
+
+- name: Wait for MLflow instance to become Available
+  kubernetes.core.k8s_info:
+    api_version: mlflow.opendatahub.io/v1
+    kind: MLflow
+    name: "{{ ocp4_workload_rhoai3x_mlflow_name }}"
+    namespace: redhat-ods-applications
+  register: _ocp4_workload_rhoai3x_mlflow_status
+  until: >-
+    _ocp4_workload_rhoai3x_mlflow_status.resources | length > 0
+    and (_ocp4_workload_rhoai3x_mlflow_status.resources[0].status.conditions | default([])
+         | selectattr('type', 'equalto', 'Available')
+         | selectattr('status', 'equalto', 'True')
+         | list | length) > 0
+  retries: "{{ ocp4_workload_rhoai3x_mlflow_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_mlflow_wait_delay }}"

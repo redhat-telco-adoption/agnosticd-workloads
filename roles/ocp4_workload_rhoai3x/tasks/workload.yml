@@ -22,6 +22,10 @@
 - name: Configure DataScienceCluster
   ansible.builtin.include_tasks: datasciencecluster.yml
 
+- name: Deploy MLflow instance
+  when: ocp4_workload_rhoai3x_mlflow_deploy | bool
+  ansible.builtin.include_tasks: mlflow_instance.yml
+
 - name: Configure DataSciencePipelineApplication
   when: ocp4_workload_rhoai3x_pipeline_app_configure | bool
   ansible.builtin.include_tasks: pipeline_app.yml
