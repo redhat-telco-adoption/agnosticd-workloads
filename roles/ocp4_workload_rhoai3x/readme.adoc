@@ -36,20 +36,20 @@ This is an *opinionated* installation designed for the Red Hat Demo Platform. It
 
 == Requirements
 
-* OpenShift 4.16+ cluster on AWS (the cluster itself is not provisioned by this role)
-* The following prerequisite workloads must run before this role:
+* OpenShift 4.20+ cluster on AWS (the cluster itself is not provisioned by this role — compatibility with earlier versions has not been tested)
+* The following prerequisite workloads from the https://github.com/agnosticd/core_workloads[AgnosticD Core Workloads] collection must run before this role:
 
 [cols="1,2"]
 |===
 |Workload |Purpose
 
-|`ocp4_workload_authentication_htpasswd`
+|https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_authentication_htpasswd[`ocp4_workload_authentication_htpasswd`]
 |Creates admin and student user accounts
 
-|`ocp4_workload_nfd`
+|https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_nfd[`ocp4_workload_nfd`]
 |Installs the Node Feature Discovery operator, which labels GPU nodes automatically
 
-|`ocp4_workload_minio`
+|https://github.com/agnosticd/core_workloads/tree/main/roles/ocp4_workload_minio[`ocp4_workload_minio`]
 |Deploys in-cluster S3 storage used by AI Pipelines and MLflow for artifact storage
 |===
 
@@ -106,7 +106,7 @@ remove_workloads:
 ocp4_workload_authentication_htpasswd_admin_user: admin
 ocp4_workload_authentication_htpasswd_admin_password: "YOUR_ADMIN_PASSWORD"
 ocp4_workload_authentication_htpasswd_user_count: 5
-ocp4_workload_authentication_htpasswd_user_password: "openshift"
+ocp4_workload_authentication_htpasswd_user_password: "YOUR_USER_PASSWORD"
 
 # -------------------------------------------------------------------
 # ocp4_workload_minio
