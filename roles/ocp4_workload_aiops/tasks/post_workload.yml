@@ -1,0 +1,17 @@
+---
+- name: Wait for AMQ Streams ClusterServiceVersion to reach Succeeded phase
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ _ocp4_workload_aiops_kafka_namespace }}"
+  register: r_csv
+  retries: 40
+  delay: 15
+  until:
+  - r_csv.resources | length > 0
+  - r_csv.resources[0].status.phase is defined
+  - r_csv.resources[0].status.phase == "Succeeded"
+
+- name: Report AMQ Streams operator installation status
+  ansible.builtin.debug:
+    msg: "AMQ Streams operator {{ r_csv.resources[0].metadata.name }} installed successfully in namespace {{ _ocp4_workload_aiops_kafka_namespace }}"

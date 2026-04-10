@@ -1,0 +1,36 @@
+---
+# ocp_username can be set by the provisioner if the workload is applied to a
+# shared cluster. The default "system:admin" is appropriate for cluster-level
+# operator deployments.
+ocp_username: "system:admin"
+
+# Main namespace for AIOps workloads.
+# The Kafka namespace is derived automatically as "{{ ocp4_workload_aiops_namespace }}-amq-streams"
+# and does not need a separate variable.
+ocp4_workload_aiops_namespace: "aiops"
+
+# -----------------------------------------------------------------------
+# Operator subscription settings
+# All values were verified against the cluster's PackageManifest on
+# 2026-04-10. Override these to pin to a specific version or channel.
+# -----------------------------------------------------------------------
+
+# OLM package name — must match the PackageManifest name exactly.
+ocp4_workload_aiops_operator_name: "amq-streams"
+
+# Subscription channel. The 'stable' channel currently resolves to
+# amqstreams.v3.1.0-14. Other available channels include:
+#   amq-streams-3.x, amq-streams-2.x, amq-streams-lts,
+#   amq-streams-2.9.x, amq-streams-2.8.x, ...
+ocp4_workload_aiops_operator_channel: "stable"
+
+# CatalogSource that provides the operator.
+ocp4_workload_aiops_operator_catalog: "redhat-operators"
+
+# Set to false to require manual InstallPlan approval (useful for pinned
+# deployments where you want to prevent automatic upgrades).
+ocp4_workload_aiops_operator_automatic_install_plan_approval: true
+
+# Pin to a specific starting CSV. Leave empty to install the latest
+# version available in the channel. Example: "amqstreams.v2.9.3-6"
+ocp4_workload_aiops_operator_starting_csv: ""

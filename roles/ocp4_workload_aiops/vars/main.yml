@@ -1,0 +1,6 @@
+---
+# Internal variables — prefixed with underscore + role name.
+
+# Kafka namespace derived from the main namespace. Not user-configurable —
+# change ocp4_workload_aiops_namespace in defaults to affect both.
+_ocp4_workload_aiops_kafka_namespace: "{{ ocp4_workload_aiops_namespace }}-amq-streams"

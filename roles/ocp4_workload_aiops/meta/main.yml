@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: ocp4_workload_aiops
+  author: Red Hat (Jose Mayorga)
+  description: |
+    Workload to install the Streams for Apache Kafka (AMQ Streams) operator
+    onto OpenShift 4 in a dedicated OwnNamespace installation.
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms: []
+  galaxy_tags:
+  - ocp
+  - openshift
+  - kafka
+  - amqstreams
+dependencies: []

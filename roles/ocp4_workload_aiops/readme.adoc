@@ -1,0 +1,194 @@
+= ocp4_workload_aiops — Streams for Apache Kafka (AMQ Streams)
+
+== Role Overview
+
+Installs the *Streams for Apache Kafka* (AMQ Streams) operator onto an OpenShift 4 cluster
+using the AgnosticD V2 `install_operator` shared role.
+
+This role manages two namespaces:
+
+* *Main workload namespace* (`ocp4_workload_aiops_namespace`, default: `aiops`) — where AIOps
+  application workloads will be deployed.
+* *Kafka namespace* (derived as `{{ ocp4_workload_aiops_namespace }}-amq-streams`, e.g. `aiops-amq-streams`) —
+  where the AMQ Streams operator, Kafka cluster, and topic CRs live.
+
+The operator is deployed in *OwnNamespace* install mode inside the Kafka namespace, keeping it
+isolated from the main workload namespace and from other operators (e.g. RHOAI Serverless) that
+may already be installed on the cluster.
+
+=== Task Files
+
+* link:./tasks/pre_workload.yml[pre_workload.yml] — Creates the operator namespace.
+* link:./tasks/workload.yml[workload.yml] — Calls the `install_operator` role to create
+  the OperatorGroup, Subscription, and wait for the InstallPlan to complete.
+* link:./tasks/post_workload.yml[post_workload.yml] — Waits for the ClusterServiceVersion
+  to reach `Succeeded` phase and reports the installed version.
+* link:./tasks/remove_workload.yml[remove_workload.yml] — Removes the Subscription, CSV,
+  OperatorGroup, the Kafka namespace, and the main workload namespace.
+
+The `ACTION` variable (set by the AgnosticD framework) controls which task file runs:
+
+* `provision` → link:./tasks/workload.yml[workload.yml]
+* `destroy` → link:./tasks/remove_workload.yml[remove_workload.yml]
+
+== Operator Details
+
+|===
+| Field | Value
+
+| OLM Package Name  | `amq-streams`
+| CatalogSource     | `redhat-operators`
+| Default Channel   | `stable` (resolves to `amqstreams.v3.1.0-14` at time of writing)
+| Install Mode      | OwnNamespace
+| Provider          | Red Hat
+|===
+
+Available channels (as of 2026-04-10):
+
+* `stable` ← default, tracks latest stable release
+* `amq-streams-3.x` — tracks AMQ Streams 3.x family
+* `amq-streams-2.x` — tracks AMQ Streams 2.x family
+* `amq-streams-lts` — long-term support track
+* `amq-streams-3.1.x`, `amq-streams-3.0.x`, `amq-streams-2.9.x`, … — version-pinned channels
+
+== Defaults Variable File
+
+=== Variable Naming
+
+All variables are prefixed with `ocp4_workload_aiops_` to avoid collisions in Ansible's
+flat variable scope.
+
+The link:./defaults/main.yml[defaults/main.yml] file contains all configurable variables.
+Override any of them with `-e "variable=value"` on the command line, or via AgnosticV
+configuration.
+
+=== Variables
+
+[cols="1,1,2",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp_username`
+| `system:admin`
+| OpenShift user the workload is provisioned for. Typically left as `system:admin`
+  for cluster-level operator deployments.
+
+| `ocp4_workload_aiops_namespace`
+| `aiops`
+| Main namespace for AIOps application workloads. The Kafka namespace is derived
+  automatically as `{{ ocp4_workload_aiops_namespace }}-amq-streams` (e.g. `aiops-amq-streams`)
+  and does not need a separate variable.
+
+| `ocp4_workload_aiops_operator_name`
+| `amq-streams`
+| OLM package name. Must match the `PackageManifest` name exactly.
+
+| `ocp4_workload_aiops_operator_channel`
+| `stable`
+| Subscription channel. Change to pin to a specific AMQ Streams release train
+  (e.g., `amq-streams-2.x` for the 2.x family).
+
+| `ocp4_workload_aiops_operator_catalog`
+| `redhat-operators`
+| OLM CatalogSource that provides the operator.
+
+| `ocp4_workload_aiops_operator_automatic_install_plan_approval`
+| `true`
+| When `true`, InstallPlans are approved automatically (operator upgrades happen
+  automatically). Set to `false` to require manual approval — recommended when
+  pairing with `ocp4_workload_aiops_operator_starting_csv`.
+
+| `ocp4_workload_aiops_operator_starting_csv`
+| `""` (empty)
+| Pin to a specific ClusterServiceVersion, e.g. `amqstreams.v2.9.3-6`.
+  Leave empty to install the latest version in the channel.
+  Must set `ocp4_workload_aiops_operator_automatic_install_plan_approval: false`
+  when using this.
+|===
+
+== Usage
+
+=== Minimal (all defaults)
+
+Provisions two namespaces — `aiops` (workloads) and `aiops-amq-streams` (Kafka operator).
+
+[source,yaml]
+----
+- hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ocp4_workload_aiops
+    vars:
+      ACTION: provision
+----
+
+=== Custom main namespace
+
+Setting `ocp4_workload_aiops_namespace: "my-aiops"` automatically derives the Kafka namespace
+as `my-aiops-amq-streams`.
+
+[source,yaml]
+----
+- hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ocp4_workload_aiops
+    vars:
+      ACTION: provision
+      ocp4_workload_aiops_namespace: "my-aiops"
+----
+
+=== Pin to AMQ Streams 2.x channel
+
+[source,yaml]
+----
+- hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ocp4_workload_aiops
+    vars:
+      ACTION: provision
+      ocp4_workload_aiops_operator_channel: "amq-streams-2.x"
+----
+
+=== Pin to a specific CSV with manual approval
+
+[source,yaml]
+----
+- hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ocp4_workload_aiops
+    vars:
+      ACTION: provision
+      ocp4_workload_aiops_operator_starting_csv: "amqstreams.v2.9.3-6"
+      ocp4_workload_aiops_operator_channel: "amq-streams-2.9.x"
+      ocp4_workload_aiops_operator_automatic_install_plan_approval: false
+----
+
+=== Remove the workload
+
+[source,yaml]
+----
+- hosts: localhost
+  gather_facts: false
+  roles:
+  - role: ocp4_workload_aiops
+    vars:
+      ACTION: destroy
+----
+
+== AgnosticV Sample vars File
+
+[source,yaml]
+----
+# Main namespace for AIOps workloads.
+# Kafka namespace is derived automatically as "{{ ocp4_workload_aiops_namespace }}-amq-streams".
+ocp4_workload_aiops_namespace: "aiops"
+ocp4_workload_aiops_operator_channel: "stable"
+
+# Uncomment to pin to AMQ Streams 2.x long-term support:
+# ocp4_workload_aiops_operator_channel: "amq-streams-lts"
+# ocp4_workload_aiops_operator_starting_csv: "amqstreams.v2.5.2-8"
+# ocp4_workload_aiops_operator_automatic_install_plan_approval: false
+----
