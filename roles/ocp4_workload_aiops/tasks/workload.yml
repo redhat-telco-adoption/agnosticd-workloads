@@ -13,6 +13,7 @@
     install_operator_channel: "{{ ocp4_workload_aiops_operator_channel }}"
     install_operator_automatic_install_plan_approval: "{{ ocp4_workload_aiops_operator_automatic_install_plan_approval }}"
     install_operator_starting_csv: "{{ ocp4_workload_aiops_operator_starting_csv }}"
+    install_operator_csv_nameprefix: "{{ ocp4_workload_aiops_operator_csv_nameprefix }}"
     install_operator_manage_namespaces:
     - "{{ _ocp4_workload_aiops_kafka_namespace }}"
 

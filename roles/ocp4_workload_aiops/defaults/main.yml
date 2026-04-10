@@ -18,6 +18,11 @@ ocp4_workload_aiops_namespace: "aiops"
 # OLM package name — must match the PackageManifest name exactly.
 ocp4_workload_aiops_operator_name: "amq-streams"
 
+# CSV name prefix used by install_operator to locate the InstallPlan.
+# NOTE: differs from the package name — AMQ Streams CSVs are named
+# "amqstreams.vX.Y.Z" (no hyphen), not "amq-streams.vX.Y.Z".
+ocp4_workload_aiops_operator_csv_nameprefix: "amqstreams"
+
 # Subscription channel. The 'stable' channel currently resolves to
 # amqstreams.v3.1.0-14. Other available channels include:
 #   amq-streams-3.x, amq-streams-2.x, amq-streams-lts,
