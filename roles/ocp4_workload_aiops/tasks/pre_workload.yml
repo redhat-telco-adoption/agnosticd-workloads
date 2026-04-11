@@ -1,13 +1,4 @@
 ---
-- name: Create AIOps main namespace
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: "{{ ocp4_workload_aiops_namespace }}"
-
 - name: Create AMQ Streams namespace
   kubernetes.core.k8s:
     state: present
