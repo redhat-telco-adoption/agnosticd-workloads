@@ -20,7 +20,7 @@
         annotations:
           opendatahub.io/apiProtocol: REST
           opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
-          opendatahub.io/runtime-version: v0.13.0
+          opendatahub.io/runtime-version: v0.18.0
           opendatahub.io/serving-runtime-scope: global
           opendatahub.io/template-display-name: vLLM NVIDIA GPU ServingRuntime for KServe
           opendatahub.io/template-name: vllm-cuda-runtime-template
@@ -64,12 +64,15 @@
         name: "{{ ocp4_workload_rhoai3x_model_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
         annotations:
+          modelFormat: vLLM
           opendatahub.io/genai-use-case: chat
           opendatahub.io/model-type: generative
           openshift.io/description: ""
           openshift.io/display-name: "{{ ocp4_workload_rhoai3x_model_display_name }}"
           security.opendatahub.io/enable-auth: "false"
-          serving.kserve.io/deploymentMode: RawDeployment
+          # RHOAI 3.4 / KServe renamed "RawDeployment" to "Standard" (RawDeployment
+          # is now a deprecated alias the controller normalizes to Standard).
+          serving.kserve.io/deploymentMode: Standard
         labels:
           networking.kserve.io/visibility: exposed
           opendatahub.io/dashboard: "true"
@@ -81,6 +84,8 @@
             type: Recreate
           minReplicas: "{{ ocp4_workload_rhoai3x_model_min_replicas | int }}"
           maxReplicas: "{{ ocp4_workload_rhoai3x_model_max_replicas | int }}"
+          # RHOAI 3.4 deploy wizard emits a predictor-level request timeout.
+          timeout: "{{ ocp4_workload_rhoai3x_model_timeout | int }}"
           model:
             modelFormat:
               name: vLLM

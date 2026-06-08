@@ -179,7 +179,9 @@ ocp4_workload_rhoai3x_model_storage_uri: "oci://registry.redhat.io/rhelai1/model
 
 # ServingRuntime — one per model, named after the model (matches RHOAI dashboard convention)
 ocp4_workload_rhoai3x_model_serving_runtime_name: "{{ ocp4_workload_rhoai3x_model_name }}"
-ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.2.2-1774351144"
+# RHOAI 3.4 vLLM NVIDIA GPU ServingRuntime template default (runtime v0.18.0).
+# Registry org moved rhaiis -> rhaii; digest-pinned to match the 3.4 dashboard template.
+ocp4_workload_rhoai3x_model_serving_runtime_image: "registry.redhat.io/rhaii/vllm-cuda-rhel9@sha256:ad06abf3bb5235ebb5b2df84cd1b9fd09e823f0ff2eebfc82bb4590275ccfe0b"
 
 # Additional vLLM CLI args appended after --port, --model, --served-model-name
 # Example: ["--tensor-parallel-size=2", "--max-model-len=8192"]
@@ -197,6 +199,9 @@ ocp4_workload_rhoai3x_model_memory_limits: "8Gi"
 # Replica bounds
 ocp4_workload_rhoai3x_model_min_replicas: 1
 ocp4_workload_rhoai3x_model_max_replicas: 1
+
+# Predictor request timeout (seconds) — RHOAI 3.4 deploy wizard default.
+ocp4_workload_rhoai3x_model_timeout: 30
 
 # Wait for InferenceService Ready before proceeding
 # Set to false to fire-and-forget (large models can take 20+ minutes to load)
