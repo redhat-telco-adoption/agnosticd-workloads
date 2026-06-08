@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+  labels:
+    demo.redhat.com/name: ocp4-workload-rhoai3x
+    demo.redhat.com/created-by: agnosticd
+data:
+  config.yaml: |
+    enableUserWorkload: true

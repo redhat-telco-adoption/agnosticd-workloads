@@ -1,0 +1,65 @@
+---
+# Models-as-a-Service prerequisite: a Gateway API Gateway named
+# maas-default-gateway. The MaaS controller attaches HTTPRoutes and auth
+# policies to this gateway. The two annotations are required by MaaS:
+#   opendatahub.io/managed: "false"
+#     - stops the ODH Model Controller from overriding MaaS-managed auth policies
+#   security.opendatahub.io/authorino-tls-bootstrap: "true"
+#     - makes the MaaS controller generate the EnvoyFilter that enables TLS
+#       between the Gateway (Envoy) and Authorino
+#
+# By default we reuse the cluster's existing GatewayClass
+# (data-science-gateway-class, controller openshift.io/gateway-controller).
+# NOTE: the external listener below is HTTP for demo simplicity. Confirm/adjust
+# the listener (HTTPS + cert) during live validation if inference clients
+# require TLS termination at the gateway.
+
+- name: Create a dedicated GatewayClass for MaaS
+  when: ocp4_workload_rhoai3x_maas_create_gateway_class | bool
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: GatewayClass
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}"
+      spec:
+        controllerName: "{{ ocp4_workload_rhoai3x_maas_gateway_class_controller }}"
+
+- name: Create the maas-default-gateway Gateway
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: Gateway
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+        annotations:
+          opendatahub.io/managed: "false"
+          security.opendatahub.io/authorino-tls-bootstrap: "true"
+      spec:
+        gatewayClassName: "{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}"
+        listeners:
+        - name: http
+          protocol: HTTP
+          port: 80
+          allowedRoutes:
+            namespaces:
+              from: All
+
+- name: Wait for the Gateway to be programmed
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_gateway
+  retries: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_gateway.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_gateway.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Programmed')
+    | selectattr('status', 'equalto', 'True') | list | length == 1

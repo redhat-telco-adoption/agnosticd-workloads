@@ -1,0 +1,19 @@
+---
+# Models-as-a-Service prerequisite: Red Hat Connectivity Link (Kuadrant).
+# Provides the API gateway authn/authz stack (Authorino) and rate limiting
+# (Limitador) that MaaS uses to enforce subscriptions and token quotas.
+#
+# Rather than re-implement the operator + Kuadrant install, reuse the
+# agnosticd core_workloads role. It installs rhcl-operator into
+# openshift-operators, creates the Kuadrant instance (kuadrant-instance in
+# openshift-operators) and waits for it Ready, with retry/rescue handling.
+#
+# We include it (gated by maas_enable) instead of adding it to the workloads
+# list so it only runs when MaaS is enabled. Authorino runs clusterWide, so its
+# namespace (openshift-operators) need not match the kuadrant-system used in the
+# MaaS docs' TLS examples — maas_authorino_namespace points the TLS task at it.
+- name: Install Red Hat Connectivity Link via the core workload
+  ansible.builtin.include_role:
+    name: agnosticd.core_workloads.ocp4_workload_connectivity_link
+  vars:
+    ocp4_workload_connectivity_link_channel: "{{ ocp4_workload_rhoai3x_maas_rhcl_channel }}"

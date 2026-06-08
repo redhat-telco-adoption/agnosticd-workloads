@@ -39,3 +39,39 @@
   - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
   - ocp4_workload_rhoai3x_model_deploy | bool
   ansible.builtin.include_tasks: gen_ai_playground.yml
+
+# --- Models-as-a-Service (optional, RHOAI 3.4+) ---------------------------
+# Prerequisites first (UWM, PostgreSQL, db secret, Connectivity Link, Gateway,
+# Authorino TLS), then flip the DSC/dashboard MaaS switches and verify the tenant.
+- name: Enable User Workload Monitoring for Models-as-a-Service
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_uwm_enable | bool
+  ansible.builtin.include_tasks: maas_user_workload_monitoring.yml
+
+- name: Deploy PostgreSQL for Models-as-a-Service
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_deploy_postgres | bool
+  ansible.builtin.include_tasks: maas_postgres.yml
+
+- name: Create the Models-as-a-Service database secret
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_db_secret.yml
+
+- name: Install Red Hat Connectivity Link for Models-as-a-Service
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_connectivity_link.yml
+
+- name: Configure the Models-as-a-Service Gateway
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_gateway.yml
+
+- name: Configure Authorino TLS for Models-as-a-Service
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_authorino_tls.yml
+
+- name: Enable Models-as-a-Service in the DataScienceCluster and dashboard
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_enable.yml
+# --------------------------------------------------------------------------

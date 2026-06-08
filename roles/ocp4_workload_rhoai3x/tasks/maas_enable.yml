@@ -1,0 +1,75 @@
+---
+# Flip the MaaS switches once all prerequisites (UWM, PostgreSQL, db secret,
+# Connectivity Link, Gateway, Authorino TLS) are in place, then verify the
+# MaaS tenant comes up Ready.
+
+- name: Enable Models-as-a-Service in the DataScienceCluster
+  kubernetes.core.k8s:
+    state: patched
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp4_workload_rhoai3x_dsc_name }}"
+    definition:
+      spec:
+        components:
+          kserve:
+            modelsAsService:
+              managementState: Managed
+
+- name: Enable Models-as-a-Service feature flags in OdhDashboardConfig
+  kubernetes.core.k8s:
+    state: patched
+    api_version: opendatahub.io/v1alpha
+    kind: OdhDashboardConfig
+    name: odh-dashboard-config
+    namespace: redhat-ods-applications
+    definition:
+      spec:
+        dashboardConfig:
+          modelAsService: true
+          maasAuthPolicies: true
+          vLLMDeploymentOnMaaS: "{{ ocp4_workload_rhoai3x_maas_vllm_on_maas | bool }}"
+          observabilityDashboard: "{{ ocp4_workload_rhoai3x_maas_observability_dashboard | bool }}"
+
+- name: Restart RHOAI dashboard to pick up MaaS flags
+  kubernetes.core.k8s:
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: rhods-dashboard
+        namespace: redhat-ods-applications
+        annotations:
+          kubectl.kubernetes.io/restartedAt: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+
+- name: Wait for the Models-as-a-Service CRDs to be established
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: tenants.maas.opendatahub.io
+  register: _ocp4_workload_rhoai3x_maas_tenant_crd
+  retries: "{{ ocp4_workload_rhoai3x_maas_tenant_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_tenant_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_tenant_crd.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_tenant_crd.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Established')
+    | selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Wait for the default MaaS tenant to be Ready
+  kubernetes.core.k8s_info:
+    api_version: maas.opendatahub.io/v1alpha1
+    kind: Tenant
+    name: default-tenant
+    namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_tenant
+  retries: "{{ ocp4_workload_rhoai3x_maas_tenant_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_tenant_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_tenant.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_tenant.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Ready')
+    | selectattr('status', 'equalto', 'True') | list | length == 1

@@ -1,0 +1,109 @@
+---
+# Models-as-a-Service prerequisite: a PostgreSQL 14+ instance.
+# RHOAI does not ship one. We deploy a small instance via the cloudnative-pg
+# operator (a declarative Cluster CR). Set maas_deploy_postgres=false to skip
+# this and point maas-db-config at an external PostgreSQL instead.
+
+- name: Install the cloudnative-pg operator
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: install
+    install_operator_name: cloudnative-pg
+    install_operator_namespace: "{{ ocp4_workload_rhoai3x_maas_cnpg_namespace }}"
+    install_operator_channel: "{{ ocp4_workload_rhoai3x_maas_cnpg_channel }}"
+    install_operator_catalog: "{{ ocp4_workload_rhoai3x_maas_cnpg_catalog }}"
+    install_operator_csv_nameprefix: cloudnative-pg
+    install_operator_automatic_install_plan_approval: true
+
+- name: Wait for the cloudnative-pg Cluster CRD to be established
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: clusters.postgresql.cnpg.io
+  register: _ocp4_workload_rhoai3x_maas_cnpg_crd
+  retries: "{{ ocp4_workload_rhoai3x_maas_cnpg_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_cnpg_csv_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_cnpg_crd.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_cnpg_crd.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Established')
+    | selectattr('status', 'equalto', 'True') | list | length == 1
+
+# Resolve the DB password idempotently: reuse the existing credentials secret if
+# present, else use the provided var, else generate a random one (so re-runs do
+# not change the password and break an existing Cluster).
+- name: Look up an existing PostgreSQL credentials secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-credentials"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_pg_existing
+
+- name: Resolve the PostgreSQL password
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_maas_pg_password: >-
+      {{
+        (_ocp4_workload_rhoai3x_maas_pg_existing.resources[0].data.password | b64decode)
+        if (_ocp4_workload_rhoai3x_maas_pg_existing.resources | length == 1)
+        else (ocp4_workload_rhoai3x_maas_pg_password
+              if ocp4_workload_rhoai3x_maas_pg_password | length > 0
+              else lookup('community.general.random_string',
+                          length=24, special=false))
+      }}
+  no_log: true
+
+- name: Create the PostgreSQL owner credentials secret (basic-auth)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-credentials"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+      stringData:
+        username: "{{ ocp4_workload_rhoai3x_maas_pg_user }}"
+        password: "{{ _ocp4_workload_rhoai3x_maas_pg_password }}"
+  no_log: true
+
+- name: Create the cloudnative-pg Cluster
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+      spec:
+        instances: "{{ ocp4_workload_rhoai3x_maas_pg_instances | int }}"
+        bootstrap:
+          initdb:
+            database: "{{ ocp4_workload_rhoai3x_maas_pg_db }}"
+            owner: "{{ ocp4_workload_rhoai3x_maas_pg_user }}"
+            secret:
+              name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-credentials"
+        storage:
+          size: "{{ ocp4_workload_rhoai3x_maas_pg_storage_size }}"
+
+- name: Wait for the PostgreSQL Cluster to be ready
+  kubernetes.core.k8s_info:
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_pg_cluster
+  retries: "{{ ocp4_workload_rhoai3x_maas_cnpg_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_cnpg_csv_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_pg_cluster.resources | length == 1
+  - _ocp4_workload_rhoai3x_maas_pg_cluster.resources[0].status is defined
+  - >-
+    _ocp4_workload_rhoai3x_maas_pg_cluster.resources[0].status.readyInstances
+    | default(0) == (ocp4_workload_rhoai3x_maas_pg_instances | int)

@@ -1,0 +1,15 @@
+---
+# MaaS database connection secret. Consumed by the MaaS controller in
+# redhat-ods-applications. The password is templated (never a static literal)
+# from a resolved Ansible var/fact — see feedback on git-sensitive-data.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maas-db-config
+  namespace: redhat-ods-applications
+  labels:
+    demo.redhat.com/name: ocp4-workload-rhoai3x
+    demo.redhat.com/created-by: agnosticd
+type: Opaque
+stringData:
+  DB_CONNECTION_URL: "postgresql://{{ ocp4_workload_rhoai3x_maas_pg_user }}:{{ _ocp4_workload_rhoai3x_maas_db_password | urlencode }}@{{ ocp4_workload_rhoai3x_maas_pg_host }}:{{ ocp4_workload_rhoai3x_maas_pg_port }}/{{ ocp4_workload_rhoai3x_maas_pg_db }}?sslmode={{ ocp4_workload_rhoai3x_maas_db_sslmode }}"

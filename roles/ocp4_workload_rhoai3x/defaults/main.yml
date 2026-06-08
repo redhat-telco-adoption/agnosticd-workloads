@@ -208,3 +208,82 @@ ocp4_workload_rhoai3x_model_timeout: 30
 ocp4_workload_rhoai3x_model_wait_ready: true
 ocp4_workload_rhoai3x_model_ready_retries: 60
 ocp4_workload_rhoai3x_model_ready_delay: 30
+
+# ---------------------------------------------------------------------------
+# Models-as-a-Service (MaaS) — optional feature (RHOAI 3.4+)
+# Subscription-based governance/quota for LLM serving. OFF by default.
+# When enabled, this feature provisions: User Workload Monitoring, a
+# PostgreSQL 14+ instance (via cloudnative-pg), the maas-db-config secret,
+# Red Hat Connectivity Link (Kuadrant + Authorino + Limitador), a Gateway API
+# Gateway, Authorino TLS, and flips the DSC/dashboard MaaS switches.
+# See docs/maas-feature-plan.md.
+# ---------------------------------------------------------------------------
+ocp4_workload_rhoai3x_maas_enable: false
+
+# --- User Workload Monitoring (without it MaaS reports Degraded) ---
+ocp4_workload_rhoai3x_maas_uwm_enable: true
+
+# --- PostgreSQL (via the cloudnative-pg operator) ---
+# Set deploy_postgres=false to point maas-db-config at an external PG instead.
+ocp4_workload_rhoai3x_maas_deploy_postgres: true
+ocp4_workload_rhoai3x_maas_cnpg_channel: "stable-v1"
+ocp4_workload_rhoai3x_maas_cnpg_catalog: "certified-operators"
+# AllNamespaces install via openshift-operators (reuses the global OperatorGroup,
+# so the operator watches redhat-ods-applications where the Cluster CR lives).
+ocp4_workload_rhoai3x_maas_cnpg_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_cnpg_csv_wait_retries: 30
+ocp4_workload_rhoai3x_maas_cnpg_csv_wait_delay: 20
+ocp4_workload_rhoai3x_maas_pg_namespace: "redhat-ods-applications"
+ocp4_workload_rhoai3x_maas_pg_cluster_name: "maas-postgres"
+ocp4_workload_rhoai3x_maas_pg_instances: 1
+ocp4_workload_rhoai3x_maas_pg_user: "maasadmin"
+# Leave empty to auto-generate (and reuse) a random password; never hardcode a
+# literal here — set a fixed value only via a vaulted extra var if required.
+ocp4_workload_rhoai3x_maas_pg_password: ""
+ocp4_workload_rhoai3x_maas_pg_db: "maasdb"
+ocp4_workload_rhoai3x_maas_pg_storage_size: "5Gi"
+ocp4_workload_rhoai3x_maas_db_sslmode: "require"
+# Service host/port — defaults to the in-cluster cloudnative-pg -rw service.
+# Override both when using an external PG (deploy_postgres=false).
+ocp4_workload_rhoai3x_maas_pg_host: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-rw.{{ ocp4_workload_rhoai3x_maas_pg_namespace }}.svc.cluster.local"
+ocp4_workload_rhoai3x_maas_pg_port: 5432
+
+# --- Red Hat Connectivity Link (Kuadrant / Authorino / Limitador) ---
+# Installed by reusing agnosticd.core_workloads.ocp4_workload_connectivity_link,
+# which deploys the operator + Kuadrant instance into openshift-operators.
+ocp4_workload_rhoai3x_maas_rhcl_channel: "stable"
+# Generic retry knobs for the Gateway / Authorino-TLS readiness waits below.
+ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries: 30
+ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay: 20
+
+# --- Gateway API ---
+# Reuse the existing cluster GatewayClass (controller openshift.io/gateway-controller).
+# Set create_gateway_class=true only if you need a dedicated class.
+ocp4_workload_rhoai3x_maas_create_gateway_class: false
+ocp4_workload_rhoai3x_maas_gateway_class_name: "data-science-gateway-class"
+ocp4_workload_rhoai3x_maas_gateway_class_controller: "openshift.io/gateway-controller/v1"
+ocp4_workload_rhoai3x_maas_gateway_name: "maas-default-gateway"
+ocp4_workload_rhoai3x_maas_gateway_namespace: "openshift-ingress"
+
+# --- Authorino TLS (service-ca serving cert) ---
+# Authorino lives where the connectivity_link core role puts Kuadrant
+# (openshift-operators). It runs clusterWide, so this namespace is just where
+# its Deployment/Service/CR are, not a constraint on what it can protect.
+ocp4_workload_rhoai3x_maas_authorino_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_authorino_name: "authorino"
+
+# --- Dashboard feature flags (both Tech Preview, accepted) ---
+ocp4_workload_rhoai3x_maas_vllm_on_maas: true
+ocp4_workload_rhoai3x_maas_observability_dashboard: true
+
+# --- MaaS deployment / tenant verification ---
+ocp4_workload_rhoai3x_maas_namespace: "models-as-a-service"
+ocp4_workload_rhoai3x_maas_tenant_wait_retries: 30
+ocp4_workload_rhoai3x_maas_tenant_wait_delay: 20
+
+# --- Sample publish (demo MaaSModelRef + Subscription + AuthPolicy) ---
+# Built in a later layer; flag declared here so the toggle exists.
+ocp4_workload_rhoai3x_maas_publish_sample: true
+ocp4_workload_rhoai3x_maas_subscription_group: "rhoai-users"
+ocp4_workload_rhoai3x_maas_token_limit: 1000000
+ocp4_workload_rhoai3x_maas_token_window: "1h"

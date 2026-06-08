@@ -1,0 +1,37 @@
+---
+# Models-as-a-Service prerequisite: User Workload Monitoring.
+# Without UWM the MaaS deployment reports Degraded (metrics storage is required
+# by the MaaS controller / Kuadrant Limitador).
+
+- name: Check existing cluster-monitoring-config
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: cluster-monitoring-config
+    namespace: openshift-monitoring
+  register: _ocp4_workload_rhoai3x_maas_cmc
+
+# Only manage the ConfigMap when UWM is not already enabled, so we never
+# clobber a pre-existing, customised cluster-monitoring-config.
+- name: Enable user workload monitoring
+  when: >-
+    _ocp4_workload_rhoai3x_maas_cmc.resources | length == 0
+    or 'enableUserWorkload: true' not in
+       (_ocp4_workload_rhoai3x_maas_cmc.resources[0].data['config.yaml'] | default(''))
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/monitoring/cluster-monitoring-config.yaml"
+
+- name: Wait for user workload Prometheus StatefulSet to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    name: prometheus-user-workload
+    namespace: openshift-user-workload-monitoring
+  register: _ocp4_workload_rhoai3x_maas_uwm
+  retries: 30
+  delay: 10
+  until:
+  - _ocp4_workload_rhoai3x_maas_uwm.resources | length == 1
+  - _ocp4_workload_rhoai3x_maas_uwm.resources[0].status.readyReplicas is defined
+  - _ocp4_workload_rhoai3x_maas_uwm.resources[0].status.readyReplicas >= 1
