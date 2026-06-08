@@ -22,11 +22,15 @@
           # Llama Stack Configuration
           version: "2"
           image_name: rh
+          # RHOAI 3.4 ships llama-stack 0.7.1 (operator 0.4.0): the `agents` API was
+          # replaced by `responses`, and `inline::rag-runtime` by `inline::file-search`.
+          # The product docs (Working with Llama Stack 3.4) still list the old names —
+          # they lag the image. Values below were validated against the running image.
           apis:
-          - agents
           - datasetio
           - files
           - inference
+          - responses
           - safety
           - scoring
           - tool_runtime
@@ -51,9 +55,9 @@
                 persistence:
                   backend: kv_default
                   namespace: vector_io::milvus
-            agents:
-            - provider_id: meta-reference
-              provider_type: inline::meta-reference
+            responses:
+            - provider_id: builtin
+              provider_type: inline::builtin
               config:
                 persistence:
                   agent_state:
@@ -62,6 +66,8 @@
                   responses:
                     backend: sql_default
                     table_name: responses
+                    max_write_queue_size: 10000
+                    num_writers: 4
             eval: []
             files:
             - provider_id: meta-reference-files
@@ -86,16 +92,13 @@
               provider_type: inline::llm-as-judge
               config: {}
             tool_runtime:
-            - provider_id: rag-runtime
-              provider_type: inline::rag-runtime
+            - provider_id: file-search
+              provider_type: inline::file-search
               config: {}
             - provider_id: model-context-protocol
               provider_type: remote::model-context-protocol
               config: {}
             safety: []
-          metadata_store:
-            type: sqlite
-            db_path: /opt/app-root/src/.llama/distributions/rh/inference_store.db
           storage:
             backends:
               kv_default:
@@ -138,9 +141,7 @@
             datasets: []
             scoring_fns: []
             benchmarks: []
-            tool_groups:
-            - toolgroup_id: builtin::rag
-              provider_id: rag-runtime
+            tool_groups: []
           server:
             port: 8321
 
