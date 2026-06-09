@@ -106,6 +106,14 @@ ocp4_workload_rhoai3x_gen_ai_studio_enable: true
 # LlamaStackDistribution name — appears in the Gen AI Studio project dropdown
 ocp4_workload_rhoai3x_gen_ai_playground_name: "lsd-genai-playground"
 
+# Name of the LlamaStack userConfig ConfigMap. Deliberately NOT the dashboard's
+# well-known "llama-stack-config": the RHOAI 3.4 dashboard regenerates that name
+# (and any configmap labelled opendatahub.io/dashboard=true) from a built-in
+# template that still references the removed `agents` API, which reverts our fix
+# and crashloops the pod. Using a role-owned name + no dashboard label keeps our
+# config out of the dashboard's management surface.
+ocp4_workload_rhoai3x_gen_ai_playground_config_name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_name }}-config"
+
 # Max tokens passed to the vLLM provider in the LlamaStack config
 ocp4_workload_rhoai3x_gen_ai_playground_max_tokens: 4096
 
