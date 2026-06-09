@@ -3,6 +3,179 @@
 # Deprovision — reverse order of workload.yml
 # ---------------------------------------------------------------------------
 
+# -1. Models-as-a-Service (optional feature; provisioned last, so removed first).
+#     Note: User Workload Monitoring is left enabled on purpose — it is a
+#     cluster-wide setting other workloads may depend on. The DSC and the
+#     redhat-ods-applications namespace (which hold the maas-api/controller, MaaS
+#     CRDs and the PostgreSQL Cluster) are removed later by the RHOAI teardown.
+- name: Remove Models-as-a-Service resources
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  block:
+  - name: Disable Models-as-a-Service in the DataScienceCluster (quiesce controller)
+    kubernetes.core.k8s:
+      state: patched
+      api_version: datasciencecluster.opendatahub.io/v2
+      kind: DataScienceCluster
+      name: "{{ ocp4_workload_rhoai3x_dsc_name }}"
+      definition:
+        spec:
+          components:
+            kserve:
+              modelsAsService:
+                managementState: Removed
+    failed_when: false
+
+  # --- sample publish: governance CRs, model, group ---
+  - name: Remove MaaS authorization policy
+    kubernetes.core.k8s:
+      state: absent
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSAuthPolicy
+      name: "{{ ocp4_workload_rhoai3x_maas_authpolicy_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+
+  - name: Remove MaaS subscription
+    kubernetes.core.k8s:
+      state: absent
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+
+  - name: Remove MaaSModelRef
+    kubernetes.core.k8s:
+      state: absent
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSModelRef
+      name: "{{ ocp4_workload_rhoai3x_maas_modelref_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+
+  - name: Remove the sample LLMInferenceService
+    kubernetes.core.k8s:
+      state: absent
+      api_version: serving.kserve.io/v1alpha1
+      kind: LLMInferenceService
+      name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+
+  - name: Remove the MaaS subscription group
+    when: ocp4_workload_rhoai3x_maas_publish_sample | bool
+    kubernetes.core.k8s:
+      state: absent
+      api_version: user.openshift.io/v1
+      kind: Group
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_group }}"
+
+  # --- gateway (Route + Gateway + infra ConfigMap) ---
+  - name: Remove the MaaS gateway Route
+    kubernetes.core.k8s:
+      state: absent
+      api_version: route.openshift.io/v1
+      kind: Route
+      name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+
+  - name: Remove the MaaS Gateway
+    kubernetes.core.k8s:
+      state: absent
+      api_version: gateway.networking.k8s.io/v1
+      kind: Gateway
+      name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+
+  - name: Remove the MaaS gateway infrastructure ConfigMap
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: ConfigMap
+      name: "{{ ocp4_workload_rhoai3x_maas_gateway_config_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+
+  # --- Connectivity Link / Kuadrant (namespace deletion cascades Authorino/Limitador) ---
+  - name: Remove the Kuadrant instance
+    kubernetes.core.k8s:
+      state: absent
+      api_version: kuadrant.io/v1beta1
+      kind: Kuadrant
+      name: kuadrant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+
+  - name: Remove the kuadrant-system namespace
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Namespace
+      name: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+
+  # --- database secret + PostgreSQL Cluster ---
+  - name: Remove the maas-db-config secret
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Secret
+      name: maas-db-config
+      namespace: redhat-ods-applications
+
+  - name: Remove the PostgreSQL Cluster
+    when: ocp4_workload_rhoai3x_maas_deploy_postgres | bool
+    kubernetes.core.k8s:
+      state: absent
+      api_version: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+
+  - name: Remove the PostgreSQL credentials secret
+    when: ocp4_workload_rhoai3x_maas_deploy_postgres | bool
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-credentials"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_pg_namespace }}"
+
+  - name: Remove the models-as-a-service namespace
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Namespace
+      name: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+
+  # --- operators (Subscription + CSV only; openshift-operators is shared, so its
+  #     namespace and OperatorGroup are left intact). Optional. ---
+  - name: Remove the MaaS operators (Connectivity Link, cloudnative-pg)
+    when: ocp4_workload_rhoai3x_maas_remove_operators | bool
+    block:
+    - name: Remove MaaS operator Subscriptions
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: "{{ item }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_rhcl_namespace }}"
+      loop:
+      - rhcl-operator
+      - cloudnative-pg
+
+    - name: List ClusterServiceVersions in openshift-operators
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ ocp4_workload_rhoai3x_maas_rhcl_namespace }}"
+      register: _ocp4_workload_rhoai3x_maas_csvs
+
+    - name: Remove MaaS operator ClusterServiceVersion(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_rhcl_namespace }}"
+      loop: "{{ _ocp4_workload_rhoai3x_maas_csvs.resources }}"
+      when: >-
+        item.metadata.name is search('rhcl-operator')
+        or item.metadata.name is search('cloudnative-pg')
+
 # 0. Gen AI Playground (LlamaStackDistribution + ConfigMap)
 - name: Remove LlamaStackDistribution
   when:
@@ -13,6 +186,17 @@
     api_version: llamastack.io/v1alpha1
     kind: LlamaStackDistribution
     name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
+- name: Remove Gen AI Playground LlamaStack ConfigMap
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: ConfigMap
+    name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_config_name }}"
     namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
 
 # 1. MLflow instance

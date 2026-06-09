@@ -291,6 +291,10 @@ ocp4_workload_rhoai3x_maas_authorino_name: "authorino"
 ocp4_workload_rhoai3x_maas_vllm_on_maas: true
 ocp4_workload_rhoai3x_maas_observability_dashboard: true
 
+# On teardown, also remove the cloudnative-pg and rhcl operators (Subscription +
+# CSV only; the shared openshift-operators namespace/OperatorGroup are left alone).
+ocp4_workload_rhoai3x_maas_remove_operators: true
+
 # --- MaaS deployment / tenant verification ---
 ocp4_workload_rhoai3x_maas_namespace: "models-as-a-service"
 ocp4_workload_rhoai3x_maas_tenant_wait_retries: 30
