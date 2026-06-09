@@ -54,7 +54,7 @@
           trainingoperator:
             managementState: Removed
           mlflowoperator:
-            managementState: Managed
+            managementState: "{{ 'Managed' if ocp4_workload_rhoai3x_mlflow_deploy | bool else 'Removed' }}"
           modelregistry:
             managementState: Managed
 

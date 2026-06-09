@@ -126,13 +126,15 @@ ocp4_workload_rhoai3x_dsc_wait_retries: 30
 ocp4_workload_rhoai3x_dsc_wait_delay: 20
 
 # ---------------------------------------------------------------------------
-# MLflow instance (optional)
+# MLflow instance (optional feature — opt-in)
 # Deployed in redhat-ods-applications (operator's fixed targetNamespace).
 # Uses SQLite on a PVC for metadata and MinIO from Stage 1 for artifacts.
+# When false, the mlflowoperator DSC component is left Removed (no operator).
+# See MLFLOW-SHOWCASE.md for the demo walkthrough.
 # ---------------------------------------------------------------------------
 
-# Set to false to skip MLflow deployment
-ocp4_workload_rhoai3x_mlflow_deploy: true
+# Set to true to deploy MLflow (experiment tracking + model registry)
+ocp4_workload_rhoai3x_mlflow_deploy: false
 
 # Name of the MLflow CR
 ocp4_workload_rhoai3x_mlflow_name: "mlflow"
