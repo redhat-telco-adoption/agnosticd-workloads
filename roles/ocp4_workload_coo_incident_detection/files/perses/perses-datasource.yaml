@@ -23,5 +23,5 @@ spec:
         proxy:
           kind: HTTPProxy
           spec:
-            secret: perses-datasource-token
+            secret: thanos-querier-secret
             url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
