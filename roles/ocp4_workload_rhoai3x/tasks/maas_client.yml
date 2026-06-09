@@ -148,6 +148,11 @@
           app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
       spec:
         replicas: "{{ ocp4_workload_rhoai3x_maas_client_replicas | int }}"
+        # Recreate (not RollingUpdate): the data PVC is ReadWriteOnce, so a rolling
+        # update deadlocks on a Multi-Attach error when the new pod lands on a
+        # different node than the old one. Kill old before starting new.
+        strategy:
+          type: Recreate
         selector:
           matchLabels:
             app: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
@@ -225,6 +230,11 @@
               # so bypass access control (appropriate for this demo).
               - name: BYPASS_MODEL_ACCESS_CONTROL
                 value: "{{ ocp4_workload_rhoai3x_maas_client_bypass_model_access_control | string | lower }}"
+              # Per-user "Direct Connections" let each user add their OWN MaaS sk-
+              # key as a personal connection, so their chats meter as them — the
+              # per-user metering path (the global key/connection meters as one).
+              - name: ENABLE_DIRECT_CONNECTIONS
+                value: "{{ ocp4_workload_rhoai3x_maas_client_direct_connections | string | lower }}"
               - name: DATA_DIR
                 value: /app/backend/data
               ports:

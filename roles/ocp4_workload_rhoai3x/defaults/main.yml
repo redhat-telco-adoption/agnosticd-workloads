@@ -573,6 +573,11 @@ ocp4_workload_rhoai3x_maas_client_default_user_role: "user"
 # Show the shared MaaS model to every user (base connection models are otherwise
 # admin-only). Set false to gate models per user/group via the Admin Panel.
 ocp4_workload_rhoai3x_maas_client_bypass_model_access_control: true
+# Allow each user to add their OWN MaaS sk- key as a personal "Direct Connection"
+# — the per-user-metering path (each user's traffic meters under their identity,
+# vs the single shared connection which meters as one). Pairs with
+# maas_telemetry_capture_user: true so the Usage dashboard splits rows per user.
+ocp4_workload_rhoai3x_maas_client_direct_connections: true
 
 # MaaS gateway URL the client points at. Empty => the task builds the EXTERNAL
 # gateway URL from the cluster ingress domain (https://maas.<domain>/<ns>/<isvc>/v1).
