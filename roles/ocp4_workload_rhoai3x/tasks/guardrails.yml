@@ -92,6 +92,25 @@
         rails.co: |
           # Built-in sensitive data detection flows (Presidio). No custom Colang.
   vars:
+    # Flows and prompts are assembled conditionally so self-check rails can be
+    # toggled without breaking the YAML scalar (each is a single Jinja
+    # expression, so Ansible preserves the list/dict type when dumped).
+    # Input order: jailbreak/self-check first, then PII detection.
+    _gr_input_flows: >-
+      {{ (['self check input'] if ocp4_workload_rhoai3x_guardrails_self_check_input | bool else [])
+         + ['detect sensitive data on input'] }}
+    _gr_output_flows: >-
+      {{ ['detect sensitive data on output']
+         + (['self check output'] if ocp4_workload_rhoai3x_guardrails_self_check_output | bool else []) }}
+    # max_tokens per task lifts NeMo's 3-token self-check cap so the reasoning
+    # model can finish thinking before emitting Yes/No (else it blocks everything).
+    _gr_prompts: >-
+      {{ ([{'task': 'self_check_input', 'content': ocp4_workload_rhoai3x_guardrails_self_check_input_prompt,
+            'max_tokens': ocp4_workload_rhoai3x_guardrails_self_check_max_tokens | int}]
+            if ocp4_workload_rhoai3x_guardrails_self_check_input | bool else [])
+         + ([{'task': 'self_check_output', 'content': ocp4_workload_rhoai3x_guardrails_self_check_output_prompt,
+            'max_tokens': ocp4_workload_rhoai3x_guardrails_self_check_max_tokens | int}]
+            if ocp4_workload_rhoai3x_guardrails_self_check_output | bool else []) }}
     _ocp4_workload_rhoai3x_guardrails_config:
       models:
       - type: main
@@ -99,24 +118,31 @@
         parameters:
           openai_api_base: "{{ ocp4_workload_rhoai3x_guardrails_model_predictor_url }}"
           model_name: "{{ ocp4_workload_rhoai3x_guardrails_model_name }}"
+          # Reasoning models need headroom to finish thinking before the Yes/No
+          # answer lands in `content`; without this self-check fail-closes.
+          max_tokens: "{{ ocp4_workload_rhoai3x_guardrails_model_max_tokens | int }}"
       rails:
         config:
           sensitive_data_detection:
             input:
+              score_threshold: "{{ ocp4_workload_rhoai3x_guardrails_pii_score_threshold | float }}"
               entities: "{{ ocp4_workload_rhoai3x_guardrails_pii_entities_input }}"
             output:
+              score_threshold: "{{ ocp4_workload_rhoai3x_guardrails_pii_score_threshold | float }}"
               entities: "{{ ocp4_workload_rhoai3x_guardrails_pii_entities_output }}"
         input:
-          flows:
-          - detect sensitive data on input
+          flows: "{{ _gr_input_flows }}"
         output:
-          flows:
-          - detect sensitive data on output
+          flows: "{{ _gr_output_flows }}"
           # Required for streaming clients (e.g. the Gen AI Playground UI): NeMo
           # raises StreamingNotSupportedError on a streamed request when an output
           # rail is configured unless output streaming is explicitly enabled.
+          # stream_first=false runs the output rails before delivering chunks so a
+          # blocked response cannot leak mid-stream.
           streaming:
             enabled: true
+            stream_first: "{{ ocp4_workload_rhoai3x_guardrails_output_stream_first | bool }}"
+      prompts: "{{ _gr_prompts }}"
 
 - name: Create the NemoGuardrails resource
   kubernetes.core.k8s:
