@@ -123,10 +123,19 @@ ocp4_workload_rhoai3x_gen_ai_playground_wait_delay: 15
 
 # --- Extra Playground models (added automatically when their backend exists) ---
 # So the user can pick, in the Playground dropdown, between the direct model and:
-#   - the MaaS-governed model (metered) — usage flows through the gateway and
-#     shows up in the MaaS Usage dashboard. Added when MaaS + sample are on.
 #   - the Guardrails-protected model (PII filtered). Added when guardrails is on.
-ocp4_workload_rhoai3x_playground_maas_model: "{{ (ocp4_workload_rhoai3x_maas_enable | bool) and (ocp4_workload_rhoai3x_maas_publish_sample | bool) }}"
+#
+# The MaaS-governed model is intentionally NOT offered in the Playground dropdown.
+# The dashboard Playground injects the logged-in user's OpenShift token into every
+# remote::vllm provider via the `x-llamastack-provider-data` header, which
+# overrides the configured api_token. The MaaS gateway rejects OpenShift tokens
+# (only sk-oai- keys authenticate), so a MaaS entry always 401s and returns a
+# blank response in the UI — there is no config that wins, because provider-data
+# always overrides. MaaS is still fully demoable via its native flow (the model's
+# "Generate API key -> Try in playground" UI, or any OpenAI-compatible client with
+# an sk- key), both of which authenticate correctly and are metered. Leave this
+# false; flip to true only with an auth-injecting proxy in front of the gateway.
+ocp4_workload_rhoai3x_playground_maas_model: false
 ocp4_workload_rhoai3x_playground_guardrails_model: "{{ ocp4_workload_rhoai3x_guardrails_enable | bool }}"
 
 # In-cluster OpenAI base URLs for the two extra providers.
