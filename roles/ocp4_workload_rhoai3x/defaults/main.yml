@@ -374,9 +374,12 @@ ocp4_workload_rhoai3x_guardrails_token_secret: "api-token-secret"
 
 # The model NeMo guards. Defaults to the model deployed by this role.
 ocp4_workload_rhoai3x_guardrails_model_name: "{{ ocp4_workload_rhoai3x_model_name }}"
-# OpenAI-compatible base URL of the model predictor (raw KServe headless svc,
-# HTTP on port 80, path /v1). Override if your serving mode differs (e.g. TLS:8443).
-ocp4_workload_rhoai3x_guardrails_model_predictor_url: "http://{{ ocp4_workload_rhoai3x_guardrails_model_name }}-predictor.{{ ocp4_workload_rhoai3x_guardrails_namespace }}.svc.cluster.local/v1"
+# OpenAI-compatible base URL of the model predictor. The KServe raw predictor
+# Service is HEADLESS (clusterIP None) with port 80 -> targetPort 8080; on a
+# headless Service you must hit the pod's real port, so :8080 is REQUIRED — port
+# 80 silently fails to connect (the rails still run, but the model is unreachable).
+# Override if your serving mode differs (e.g. TLS on :8443).
+ocp4_workload_rhoai3x_guardrails_model_predictor_url: "http://{{ ocp4_workload_rhoai3x_guardrails_model_name }}-predictor.{{ ocp4_workload_rhoai3x_guardrails_namespace }}.svc.cluster.local:8080/v1"
 
 # Presidio entity types to detect on input and output (case-sensitive).
 ocp4_workload_rhoai3x_guardrails_pii_entities_input:

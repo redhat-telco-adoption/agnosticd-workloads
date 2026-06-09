@@ -137,6 +137,12 @@
             secretKeyRef:
               name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
               key: token
+        # Lets the NeMo server proxy GET /v1/models to the backing model, which
+        # makes the guarded endpoint a valid OpenAI-compatible server (e.g. so a
+        # LlamaStack remote::vllm provider can discover it). Same URL as the rails
+        # config's openai_api_base.
+        - name: MAIN_MODEL_BASE_URL
+          value: "{{ ocp4_workload_rhoai3x_guardrails_model_predictor_url }}"
 
 - name: Wait for the NeMo Guardrails deployment to become Available
   # The operator names the Deployment/Service/Route after the CR.
