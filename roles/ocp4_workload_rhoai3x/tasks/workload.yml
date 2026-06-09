@@ -86,4 +86,10 @@
   - ocp4_workload_rhoai3x_maas_enable | bool
   - ocp4_workload_rhoai3x_maas_publish_sample | bool
   ansible.builtin.include_tasks: maas_publish_sample.yml
+
+- name: Deploy the Models-as-a-Service observability backend (Option B)
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_observability_deploy | bool
+  ansible.builtin.include_tasks: maas_observability.yml
 # --------------------------------------------------------------------------

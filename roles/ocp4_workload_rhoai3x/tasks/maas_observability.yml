@@ -1,0 +1,130 @@
+---
+# ---------------------------------------------------------------------------
+# MaaS Observability backend (Option B).
+# Makes the RHOAI "Observe & monitor -> Dashboard" (Tech Preview, rendered with
+# Perses and querying Thanos Querier) actually load by deploying the monitoring
+# backend it needs and turning on the metrics sources.
+#
+# Chain:
+#   1. Cluster Observability Operator (COO) — provides the MonitoringStack CRD.
+#   2. DSCInitialization.spec.monitoring.metrics -> RHOAI deploys Thanos/
+#      Prometheus in redhat-ods-monitoring.
+#   3. Kuadrant spec.observability.enable -> Limitador PodMonitor.
+#   4. Tenant spec.telemetry -> per-subscription/model usage metrics.
+#
+# The observabilityDashboard UI flag (maas_enable.yml) defaults to the
+# maas_observability_deploy switch, so the page is never shown without a backend.
+#
+# CAUTION: cluster-wide monitoring change. COO may be shared with other
+# workloads (e.g. ocp4_workload_coo_incident_detection); install is idempotent
+# and COO teardown is gated behind maas_observability_remove_coo.
+# ---------------------------------------------------------------------------
+
+- name: Install the Cluster Observability Operator (COO)
+  ansible.builtin.include_role:
+    name: install_operator
+  vars:
+    install_operator_action: install
+    install_operator_name: cluster-observability-operator
+    install_operator_namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+    install_operator_channel: "{{ ocp4_workload_rhoai3x_maas_coo_channel }}"
+    install_operator_catalog: redhat-operators
+    install_operator_automatic_install_plan_approval: true
+    install_operator_starting_csv: ""
+
+- name: Wait for the MonitoringStack CRD (provided by COO)
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: monitoringstacks.monitoring.rhobs
+  register: _ocp4_workload_rhoai3x_maas_mst_crd
+  retries: 30
+  delay: 10
+  until: _ocp4_workload_rhoai3x_maas_mst_crd.resources | length == 1
+
+- name: Discover the DSCInitialization resource
+  kubernetes.core.k8s_info:
+    api_version: dscinitialization.opendatahub.io/v2
+    kind: DSCInitialization
+  register: _ocp4_workload_rhoai3x_maas_dsci
+
+- name: Fail if no DSCInitialization is present
+  ansible.builtin.fail:
+    msg: >-
+      No DSCInitialization found. The RHOAI operator must create it before
+      monitoring can be configured.
+  when: _ocp4_workload_rhoai3x_maas_dsci.resources | length == 0
+
+- name: Enable RHOAI metrics monitoring on the DSCInitialization
+  kubernetes.core.k8s:
+    state: patched
+    api_version: dscinitialization.opendatahub.io/v2
+    kind: DSCInitialization
+    name: "{{ _ocp4_workload_rhoai3x_maas_dsci.resources[0].metadata.name }}"
+    definition:
+      spec:
+        monitoring:
+          managementState: Managed
+          namespace: "{{ ocp4_workload_rhoai3x_maas_monitoring_namespace }}"
+          metrics:
+            replicas: "{{ ocp4_workload_rhoai3x_maas_monitoring_replicas | int }}"
+            storage:
+              size: "{{ ocp4_workload_rhoai3x_maas_monitoring_storage_size }}"
+              retention: "{{ ocp4_workload_rhoai3x_maas_monitoring_retention }}"
+
+- name: Wait for the RHOAI Thanos Querier deployment in the monitoring namespace
+  # Match by name substring rather than a guessed label — RHOAI/COO name the
+  # querier deployment "*-thanos-querier" in redhat-ods-monitoring.
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp4_workload_rhoai3x_maas_monitoring_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_thanos
+  retries: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_delay }}"
+  until:
+  - >-
+    (_ocp4_workload_rhoai3x_maas_thanos.resources
+     | selectattr('metadata.name', 'search', 'thanos-querier')
+     | map(attribute='status.readyReplicas', default=0)
+     | map('int') | select('gt', 0) | list | length) > 0
+
+- name: Enable Kuadrant observability (Limitador PodMonitor)
+  kubernetes.core.k8s:
+    state: patched
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    name: kuadrant
+    namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+    definition:
+      spec:
+        observability:
+          enable: true
+
+- name: Wait for the Limitador PodMonitor created by Kuadrant observability
+  kubernetes.core.k8s_info:
+    api_version: monitoring.coreos.com/v1
+    kind: PodMonitor
+    name: kuadrant-limitador-monitor
+    namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_limitador_pm
+  retries: 20
+  delay: 10
+  until: _ocp4_workload_rhoai3x_maas_limitador_pm.resources | length == 1
+
+- name: Enable MaaS Tenant telemetry
+  kubernetes.core.k8s:
+    state: patched
+    api_version: maas.opendatahub.io/v1alpha1
+    kind: Tenant
+    name: default-tenant
+    namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+    definition:
+      spec:
+        telemetry:
+          enabled: true
+          metrics:
+            captureOrganization: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_organization | bool }}"
+            captureUser: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_user | bool }}"
+            captureGroup: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_group | bool }}"
+            captureModelUsage: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_model_usage | bool }}"

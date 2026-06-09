@@ -291,7 +291,11 @@ ocp4_workload_rhoai3x_maas_authorino_name: "authorino"
 
 # --- Dashboard feature flags (both Tech Preview, accepted) ---
 ocp4_workload_rhoai3x_maas_vllm_on_maas: true
-ocp4_workload_rhoai3x_maas_observability_dashboard: true
+# Root-cause fix: only show the "Observe & monitor -> Dashboard" UI when its
+# backend (Option B, maas_observability_deploy) is actually deployed, so it never
+# renders "Service Unavailable". Override to true only if you supply the backend
+# some other way.
+ocp4_workload_rhoai3x_maas_observability_dashboard: "{{ ocp4_workload_rhoai3x_maas_observability_deploy | bool }}"
 
 # On teardown, also remove the cloudnative-pg and rhcl operators (Subscription +
 # CSV only; the shared openshift-operators namespace/OperatorGroup are left alone).
@@ -387,3 +391,38 @@ ocp4_workload_rhoai3x_guardrails_replicas: 1
 # Wait for the NeMo Guardrails Deployment to become ready.
 ocp4_workload_rhoai3x_guardrails_wait_retries: 30
 ocp4_workload_rhoai3x_guardrails_wait_delay: 10
+
+# ---------------------------------------------------------------------------
+# MaaS Observability backend (Option B) — optional MaaS sub-feature (opt-in)
+# Deploys the monitoring stack behind the RHOAI "Observe & monitor -> Dashboard"
+# (Tech Preview): Cluster Observability Operator + DSCInitialization metrics
+# (Thanos/Prometheus in redhat-ods-monitoring) + Kuadrant observability + Tenant
+# telemetry. Heavy + cluster-wide; only runs when maas_enable is also true.
+# When true it also turns on the observabilityDashboard UI flag (see above).
+# See MAAS-SHOWCASE.md §4.
+# ---------------------------------------------------------------------------
+ocp4_workload_rhoai3x_maas_observability_deploy: false
+
+# Cluster Observability Operator (may be shared with other workloads).
+ocp4_workload_rhoai3x_maas_coo_namespace: "openshift-cluster-observability-operator"
+ocp4_workload_rhoai3x_maas_coo_channel: "stable"
+
+# RHOAI monitoring stack (DSCInitialization.spec.monitoring.metrics).
+ocp4_workload_rhoai3x_maas_monitoring_namespace: "redhat-ods-monitoring"
+ocp4_workload_rhoai3x_maas_monitoring_replicas: 1
+ocp4_workload_rhoai3x_maas_monitoring_storage_size: "20Gi"
+ocp4_workload_rhoai3x_maas_monitoring_retention: "15d"
+ocp4_workload_rhoai3x_maas_monitoring_wait_retries: 40
+ocp4_workload_rhoai3x_maas_monitoring_wait_delay: 15
+
+# Tenant telemetry capture flags. captureUser/Group default off (privacy +
+# Prometheus cardinality); enable captureUser for the per-user token table.
+ocp4_workload_rhoai3x_maas_telemetry_capture_organization: true
+ocp4_workload_rhoai3x_maas_telemetry_capture_user: false
+ocp4_workload_rhoai3x_maas_telemetry_capture_group: false
+ocp4_workload_rhoai3x_maas_telemetry_capture_model_usage: true
+
+# On teardown, also remove COO + revert DSCI monitoring. OFF by default because
+# COO is frequently shared with other workloads (e.g. coo_incident_detection);
+# removing it would break them. Only enable on a cluster where this role owns COO.
+ocp4_workload_rhoai3x_maas_observability_remove_coo: false

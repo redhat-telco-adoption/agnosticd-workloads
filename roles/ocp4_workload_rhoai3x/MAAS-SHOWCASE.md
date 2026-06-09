@@ -121,15 +121,28 @@ higher `priority`) for a different group to show tiered access.
 
 ## 4. Tracking usage
 
-**a) Observability dashboard (Tech Preview)** — enabled by
-`ocp4_workload_rhoai3x_maas_observability_dashboard: true`:
-- **Observe & monitor → Dashboard → Usage tab**.
+**a) Observability dashboard (Tech Preview)** — requires the observability
+**backend** (Option B), enabled by `ocp4_workload_rhoai3x_maas_observability_deploy: true`.
+This both deploys the backend (Cluster Observability Operator + RHOAI monitoring
+stack in `redhat-ods-monitoring` + Kuadrant observability + Tenant telemetry) and
+turns on the `observabilityDashboard` UI flag. **Do not** set the UI flag without
+the backend — that produces the "Service Unavailable" page (the deploy flag now
+gates the UI flag for exactly this reason).
+
+- **Observe & monitor → Dashboard → Usage tab** (admin-only; rendered with Perses,
+  queries Thanos Querier).
 - Overview: **Total Tokens, Total Requests, Total Errors, Success Rate, Active Users**.
 - **Token Consumption by User** table: per User / Subscription / Model — Tokens,
   Requests, and **Rate Limited** (429) counts. Filter by user/subscription/model
   and time range (5m … 14d).
-- Per-user attribution requires `captureUser: true` in the Tenant telemetry /
-  auth policy (it is `false` by default for privacy).
+- Per-user attribution requires `ocp4_workload_rhoai3x_maas_telemetry_capture_user: true`
+  (it is `false` by default — privacy + Prometheus cardinality).
+- Metrics only appear **after** models are accessed; an empty dashboard before any
+  inference is expected. It is **showback, not billing-grade** — for precise
+  chargeback read the Limitador metrics endpoint directly.
+
+> Heavy, cluster-wide change. COO may be shared with `coo_incident_detection`;
+> teardown leaves COO intact unless `..._maas_observability_remove_coo: true`.
 
 **b) Prometheus metrics (User Workload Monitoring)** — scraped from
 Limitador/Authorino/gateway. Query in **Observe → Metrics**:

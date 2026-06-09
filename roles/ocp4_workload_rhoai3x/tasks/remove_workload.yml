@@ -3,6 +3,90 @@
 # Deprovision — reverse order of workload.yml
 # ---------------------------------------------------------------------------
 
+# -2. MaaS Observability backend (Option B) — revert before the MaaS resources
+#     below, while the Tenant and Kuadrant CRs still exist to patch. COO and the
+#     DSCInitialization monitoring config are cluster-wide and may be shared, so
+#     they are only touched when maas_observability_remove_coo is true.
+- name: Revert MaaS Observability backend
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_observability_deploy | bool
+  block:
+  - name: Disable MaaS Tenant telemetry
+    kubernetes.core.k8s:
+      state: patched
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: Tenant
+      name: default-tenant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      definition:
+        spec:
+          telemetry:
+            enabled: false
+    failed_when: false
+
+  - name: Disable Kuadrant observability
+    kubernetes.core.k8s:
+      state: patched
+      api_version: kuadrant.io/v1beta1
+      kind: Kuadrant
+      name: kuadrant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+      definition:
+        spec:
+          observability:
+            enable: false
+    failed_when: false
+
+  - name: Revert DSCInitialization monitoring and remove COO (only if owned here)
+    when: ocp4_workload_rhoai3x_maas_observability_remove_coo | bool
+    block:
+    - name: Discover the DSCInitialization resource
+      kubernetes.core.k8s_info:
+        api_version: dscinitialization.opendatahub.io/v2
+        kind: DSCInitialization
+      register: _ocp4_workload_rhoai3x_maas_dsci_rm
+
+    - name: Set DSCInitialization monitoring back to Removed
+      kubernetes.core.k8s:
+        state: patched
+        api_version: dscinitialization.opendatahub.io/v2
+        kind: DSCInitialization
+        name: "{{ _ocp4_workload_rhoai3x_maas_dsci_rm.resources[0].metadata.name }}"
+        definition:
+          spec:
+            monitoring:
+              managementState: Removed
+      failed_when: false
+      when: _ocp4_workload_rhoai3x_maas_dsci_rm.resources | length > 0
+
+    - name: Remove the Cluster Observability Operator Subscription
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: cluster-observability-operator
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+
+    - name: List ClusterServiceVersions in the COO namespace
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+      register: _ocp4_workload_rhoai3x_maas_coo_csvs
+
+    - name: Remove the Cluster Observability Operator ClusterServiceVersion(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+      loop: "{{ _ocp4_workload_rhoai3x_maas_coo_csvs.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.metadata.name is search('observability-operator')
+
 # -1. Models-as-a-Service (optional feature; provisioned last, so removed first).
 #     Note: User Workload Monitoring is left enabled on purpose — it is a
 #     cluster-wide setting other workloads may depend on. The DSC and the
