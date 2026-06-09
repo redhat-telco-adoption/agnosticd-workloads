@@ -112,6 +112,11 @@
         output:
           flows:
           - detect sensitive data on output
+          # Required for streaming clients (e.g. the Gen AI Playground UI): NeMo
+          # raises StreamingNotSupportedError on a streamed request when an output
+          # rail is configured unless output streaming is explicitly enabled.
+          streaming:
+            enabled: true
 
 - name: Create the NemoGuardrails resource
   kubernetes.core.k8s:
