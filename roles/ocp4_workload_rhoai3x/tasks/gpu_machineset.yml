@@ -18,6 +18,17 @@
     msg: "No MachineSets found in openshift-machine-api. Cannot clone a GPU MachineSet."
   when: _ocp4_workload_rhoai3x_machinesets_raw.resources | length == 0
 
+# The MaaS sample publish deploys a second model as its own LLMInferenceService,
+# and KServe schedules whole GPUs — so it needs an extra GPU node alongside the
+# base model. Bump the effective node count to at least 2 in that case.
+- name: Compute the effective GPU node count
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_gpu_node_count_effective: >-
+      {{ [ocp4_workload_rhoai3x_gpu_node_count | int, 2] | max
+         if (ocp4_workload_rhoai3x_maas_enable | bool
+              and ocp4_workload_rhoai3x_maas_publish_sample | bool)
+         else ocp4_workload_rhoai3x_gpu_node_count | int }}
+
 - name: Store source MachineSet (first found)
   ansible.builtin.set_fact:
     _ocp4_workload_rhoai3x_source_ms: "{{ _ocp4_workload_rhoai3x_machinesets_raw.resources | first }}"
@@ -60,7 +71,7 @@
                'machine.openshift.io/cluster-api-machineset': _ocp4_workload_rhoai3x_gpu_ms_name
              }) }}
       spec:
-        replicas: "{{ ocp4_workload_rhoai3x_gpu_node_count | int }}"
+        replicas: "{{ _ocp4_workload_rhoai3x_gpu_node_count_effective | int }}"
         selector:
           matchLabels:
             machine.openshift.io/cluster-api-cluster: "{{ _ocp4_workload_rhoai3x_infra_id }}"
@@ -103,7 +114,7 @@
   until: >-
     _ocp4_workload_rhoai3x_gpu_ms_status.resources | length > 0
     and (_ocp4_workload_rhoai3x_gpu_ms_status.resources[0].status.readyReplicas | default(0) | int)
-        >= (ocp4_workload_rhoai3x_gpu_node_count | int)
+        >= (_ocp4_workload_rhoai3x_gpu_node_count_effective | int)
   retries: "{{ ocp4_workload_rhoai3x_gpu_node_ready_retries }}"
   delay: "{{ ocp4_workload_rhoai3x_gpu_node_ready_delay }}"
 

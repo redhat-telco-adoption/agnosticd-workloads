@@ -249,10 +249,12 @@ ocp4_workload_rhoai3x_maas_pg_host: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_na
 ocp4_workload_rhoai3x_maas_pg_port: 5432
 
 # --- Red Hat Connectivity Link (Kuadrant / Authorino / Limitador) ---
-# Installed by reusing agnosticd.core_workloads.ocp4_workload_connectivity_link,
-# which deploys the operator + Kuadrant instance into openshift-operators.
+# rhcl-operator is AllNamespaces-only -> installs into openshift-operators (via
+# install_operator). The Kuadrant instance + Authorino/Limitador live in
+# kuadrant-system (matches the MaaS docs and the validated layout).
 ocp4_workload_rhoai3x_maas_rhcl_channel: "stable"
-# Generic retry knobs for the Gateway / Authorino-TLS readiness waits below.
+ocp4_workload_rhoai3x_maas_rhcl_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_kuadrant_namespace: "kuadrant-system"
 ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries: 30
 ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay: 20
 
@@ -272,10 +274,9 @@ ocp4_workload_rhoai3x_maas_gateway_tls_secret: "maas-gw-service-tls"
 ocp4_workload_rhoai3x_maas_gateway_host: ""
 
 # --- Authorino TLS (service-ca serving cert) ---
-# Authorino lives where the connectivity_link core role puts Kuadrant
-# (openshift-operators). It runs clusterWide, so this namespace is just where
-# its Deployment/Service/CR are, not a constraint on what it can protect.
-ocp4_workload_rhoai3x_maas_authorino_namespace: "openshift-operators"
+# Authorino lives in the Kuadrant instance namespace (kuadrant-system). It runs
+# clusterWide, so this namespace is just where its Deployment/Service/CR are.
+ocp4_workload_rhoai3x_maas_authorino_namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
 ocp4_workload_rhoai3x_maas_authorino_name: "authorino"
 
 # --- Dashboard feature flags (both Tech Preview, accepted) ---

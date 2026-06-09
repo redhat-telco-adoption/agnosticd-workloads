@@ -3,17 +3,74 @@
 # Provides the API gateway authn/authz stack (Authorino) and rate limiting
 # (Limitador) that MaaS uses to enforce subscriptions and token quotas.
 #
-# Rather than re-implement the operator + Kuadrant install, reuse the
-# agnosticd core_workloads role. It installs rhcl-operator into
-# openshift-operators, creates the Kuadrant instance (kuadrant-instance in
-# openshift-operators) and waits for it Ready, with retry/rescue handling.
+# The rhcl-operator is AllNamespaces-only, so it installs into openshift-operators
+# (via the shared install_operator role). We create the Kuadrant instance in
+# kuadrant-system to match the MaaS docs and the validated layout: Authorino runs
+# clusterWide there, and maas_authorino_namespace points the TLS task at it.
 #
-# We include it (gated by maas_enable) instead of adding it to the workloads
-# list so it only runs when MaaS is enabled. Authorino runs clusterWide, so its
-# namespace (openshift-operators) need not match the kuadrant-system used in the
-# MaaS docs' TLS examples — maas_authorino_namespace points the TLS task at it.
-- name: Install Red Hat Connectivity Link via the core workload
+# NOTE: we do not reuse agnosticd.core_workloads.ocp4_workload_connectivity_link
+# because it creates the Kuadrant instance in openshift-operators; MaaS/Authorino
+# is namespace-agnostic but the documented + validated layout is kuadrant-system.
+
+- name: Install the Red Hat Connectivity Link operator
   ansible.builtin.include_role:
-    name: agnosticd.core_workloads.ocp4_workload_connectivity_link
+    name: install_operator
   vars:
-    ocp4_workload_connectivity_link_channel: "{{ ocp4_workload_rhoai3x_maas_rhcl_channel }}"
+    install_operator_action: install
+    install_operator_name: rhcl-operator
+    install_operator_namespace: "{{ ocp4_workload_rhoai3x_maas_rhcl_namespace }}"
+    install_operator_channel: "{{ ocp4_workload_rhoai3x_maas_rhcl_channel }}"
+    install_operator_catalog: redhat-operators
+    install_operator_csv_nameprefix: rhcl-operator
+    install_operator_automatic_install_plan_approval: true
+
+- name: Wait for the Kuadrant CRD to be established
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: kuadrants.kuadrant.io
+  register: _ocp4_workload_rhoai3x_maas_kuadrant_crd
+  retries: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_kuadrant_crd.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_kuadrant_crd.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Established')
+    | selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Create the kuadrant-system namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+
+- name: Create the Kuadrant instance
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: kuadrant.io/v1beta1
+      kind: Kuadrant
+      metadata:
+        name: kuadrant
+        namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+      spec: {}
+
+- name: Wait for the Kuadrant instance to be ready
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    name: kuadrant
+    namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_kuadrant
+  retries: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_kuadrant.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_kuadrant.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Ready')
+    | selectattr('status', 'equalto', 'True') | list | length == 1
