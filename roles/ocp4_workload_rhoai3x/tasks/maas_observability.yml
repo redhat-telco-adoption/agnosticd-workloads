@@ -61,6 +61,24 @@
   - monitoringstacks.monitoring.rhobs
   - opentelemetrycollectors.opentelemetry.io
 
+# COO bundles the Perses operator, whose conversion webhook
+# (perses-operator-service) must be serving before the MaaS controller can apply
+# the Usage dashboard/datasource — otherwise its reconcile fails transiently with
+# "no endpoints available for service perses-operator-service" and the Usage tab
+# shows "No datasource found" until the next 5-min reconcile. Wait it out.
+- name: Wait for the Perses operator (conversion webhook) to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: perses-operator
+    namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_perses_op
+  retries: 30
+  delay: 10
+  until:
+  - _ocp4_workload_rhoai3x_maas_perses_op.resources | length == 1
+  - (_ocp4_workload_rhoai3x_maas_perses_op.resources[0].status.readyReplicas | default(0) | int) >= 1
+
 - name: Discover the DSCInitialization resource
   kubernetes.core.k8s_info:
     api_version: dscinitialization.opendatahub.io/v2
@@ -149,3 +167,24 @@
             captureUser: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_user | bool }}"
             captureGroup: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_group | bool }}"
             captureModelUsage: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_model_usage | bool }}"
+
+# Terminal check: the MaaS controller creates the Usage-tab PersesDatasource
+# (kuadrant-prometheus-datasource, in redhat-ods-applications) on its next Tenant
+# reconcile — but only once telemetry is on AND the Perses CRD/webhook are up.
+# Its reconcile loop runs every ~5 min, so allow a full cycle. Until this is
+# Available, the dashboard Usage tab shows "No datasource found".
+- name: Wait for the MaaS Usage observability datasource to be reconciled
+  kubernetes.core.k8s_info:
+    api_version: perses.dev/v1alpha2
+    kind: PersesDatasource
+    name: kuadrant-prometheus-datasource
+    namespace: redhat-ods-applications
+  register: _ocp4_workload_rhoai3x_maas_usage_ds
+  retries: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_usage_ds.resources | length == 1
+  - >-
+    (_ocp4_workload_rhoai3x_maas_usage_ds.resources[0].status.conditions | default([])
+     | selectattr('type', 'equalto', 'Available')
+     | selectattr('status', 'equalto', 'True') | list | length) > 0
