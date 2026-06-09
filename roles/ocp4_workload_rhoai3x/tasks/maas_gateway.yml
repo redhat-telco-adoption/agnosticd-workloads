@@ -1,18 +1,31 @@
 ---
 # Models-as-a-Service prerequisite: a Gateway API Gateway named
-# maas-default-gateway. The MaaS controller attaches HTTPRoutes and auth
-# policies to this gateway. The two annotations are required by MaaS:
-#   opendatahub.io/managed: "false"
-#     - stops the ODH Model Controller from overriding MaaS-managed auth policies
-#   security.opendatahub.io/authorino-tls-bootstrap: "true"
-#     - makes the MaaS controller generate the EnvoyFilter that enables TLS
-#       between the Gateway (Envoy) and Authorino
+# maas-default-gateway exposed at https://maas.<ingress-domain>/maas-api.
 #
-# By default we reuse the cluster's existing GatewayClass
-# (data-science-gateway-class, controller openshift.io/gateway-controller).
-# NOTE: the external listener below is HTTP for demo simplicity. Confirm/adjust
-# the listener (HTTPS + cert) during live validation if inference clients
-# require TLS termination at the gateway.
+# This mirrors the RHOAI data-science-gateway (and the upstream
+# models-as-a-service setup-gateway.sh "clusterip mode"): the gateway Service is
+# ClusterIP with a service-ca serving cert, the listener is HTTPS:443, and an
+# OpenShift Route (reencrypt) exposes it at the apps domain. A bare HTTP/
+# LoadBalancer gateway does NOT work — the dashboard's maas-ui calls
+# https://maas.<ingress-domain>/maas-api and Kuadrant only attaches its
+# AuthPolicy/TokenRateLimitPolicy to a properly programmed HTTPS gateway.
+#
+# Required annotations:
+#   opendatahub.io/managed: "false"  - we own the gateway; the controller won't touch it
+#   security.opendatahub.io/authorino-tls-bootstrap: "true" - gateway<->Authorino TLS
+
+- name: Discover the cluster ingress domain
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: _ocp4_workload_rhoai3x_maas_ingress
+
+- name: Set the MaaS gateway hostname
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_maas_gateway_host: >-
+      {{ ocp4_workload_rhoai3x_maas_gateway_host
+         | default('maas.' ~ _ocp4_workload_rhoai3x_maas_ingress.resources[0].spec.domain, true) }}
 
 - name: Create a dedicated GatewayClass for MaaS
   when: ocp4_workload_rhoai3x_maas_create_gateway_class | bool
@@ -25,6 +38,25 @@
         name: "{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}"
       spec:
         controllerName: "{{ ocp4_workload_rhoai3x_maas_gateway_class_controller }}"
+
+# Gateway infrastructure params: make the gateway Service ClusterIP (not a raw
+# LoadBalancer) and have service-ca issue its serving cert.
+- name: Create the MaaS gateway infrastructure ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_gateway_config_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+      data:
+        service: |
+          metadata:
+            annotations:
+              service.beta.openshift.io/serving-cert-secret-name: "{{ ocp4_workload_rhoai3x_maas_gateway_tls_secret }}"
+          spec:
+            type: ClusterIP
 
 - name: Create the maas-default-gateway Gateway
   kubernetes.core.k8s:
@@ -40,10 +72,21 @@
           security.opendatahub.io/authorino-tls-bootstrap: "true"
       spec:
         gatewayClassName: "{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}"
+        infrastructure:
+          parametersRef:
+            group: ""
+            kind: ConfigMap
+            name: "{{ ocp4_workload_rhoai3x_maas_gateway_config_name }}"
         listeners:
-        - name: http
-          protocol: HTTP
-          port: 80
+        - name: https
+          protocol: HTTPS
+          port: 443
+          tls:
+            mode: Terminate
+            certificateRefs:
+            - group: ""
+              kind: Secret
+              name: "{{ ocp4_workload_rhoai3x_maas_gateway_tls_secret }}"
           allowedRoutes:
             namespaces:
               from: All
@@ -63,3 +106,28 @@
     _ocp4_workload_rhoai3x_maas_gateway.resources[0].status.conditions
     | default([]) | selectattr('type', 'equalto', 'Programmed')
     | selectattr('status', 'equalto', 'True') | list | length == 1
+
+# Expose the gateway externally at maas.<ingress-domain> (reencrypt; the router
+# auto-injects the service-ca as the destination CA via the annotation).
+- name: Create the OpenShift Route for the MaaS gateway
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+        annotations:
+          router.openshift.io/service-ca-certificate: "true"
+      spec:
+        host: "{{ _ocp4_workload_rhoai3x_maas_gateway_host }}"
+        to:
+          kind: Service
+          name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}-{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}"
+          weight: 100
+        port:
+          targetPort: https
+        tls:
+          termination: reencrypt
+          insecureEdgeTerminationPolicy: Redirect
