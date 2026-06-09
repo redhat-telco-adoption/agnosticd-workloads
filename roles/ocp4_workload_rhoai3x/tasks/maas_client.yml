@@ -219,6 +219,12 @@
               # immediately. The admin (first signup) stays admin regardless.
               - name: DEFAULT_USER_ROLE
                 value: "{{ ocp4_workload_rhoai3x_maas_client_default_user_role }}"
+              # Base models from a connection are visible to admins but hidden from
+              # non-admin users unless per-model access control grants them. With a
+              # single shared MaaS connection we want every user to see the model,
+              # so bypass access control (appropriate for this demo).
+              - name: BYPASS_MODEL_ACCESS_CONTROL
+                value: "{{ ocp4_workload_rhoai3x_maas_client_bypass_model_access_control | string | lower }}"
               - name: DATA_DIR
                 value: /app/backend/data
               ports:

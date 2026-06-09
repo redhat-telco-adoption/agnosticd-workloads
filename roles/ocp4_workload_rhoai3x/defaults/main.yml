@@ -570,6 +570,9 @@ ocp4_workload_rhoai3x_maas_client_replicas: 1
 # Role assigned to new SSO users: "user" (auto-active, self-serve) or "pending"
 # (admin must approve each). "user" suits the per-user-metering demo.
 ocp4_workload_rhoai3x_maas_client_default_user_role: "user"
+# Show the shared MaaS model to every user (base connection models are otherwise
+# admin-only). Set false to gate models per user/group via the Admin Panel.
+ocp4_workload_rhoai3x_maas_client_bypass_model_access_control: true
 
 # MaaS gateway URL the client points at. Empty => the task builds the EXTERNAL
 # gateway URL from the cluster ingress domain (https://maas.<domain>/<ns>/<isvc>/v1).
