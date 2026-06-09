@@ -87,6 +87,33 @@
         label: "{{ item.metadata.name }}"
       when: item.metadata.name is search('observability-operator')
 
+    - name: Remove the OpenTelemetry operator Subscription
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: opentelemetry-product
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+
+    - name: List ClusterServiceVersions in the OpenTelemetry operator namespace
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+      register: _ocp4_workload_rhoai3x_maas_otel_csvs
+
+    - name: Remove the OpenTelemetry operator ClusterServiceVersion(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+      loop: "{{ _ocp4_workload_rhoai3x_maas_otel_csvs.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.metadata.name is search('opentelemetry-operator')
+
 # -1. Models-as-a-Service (optional feature; provisioned last, so removed first).
 #     Note: User Workload Monitoring is left enabled on purpose — it is a
 #     cluster-wide setting other workloads may depend on. The DSC and the

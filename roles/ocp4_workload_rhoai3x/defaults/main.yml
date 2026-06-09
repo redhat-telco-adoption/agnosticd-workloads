@@ -407,6 +407,14 @@ ocp4_workload_rhoai3x_maas_observability_deploy: false
 ocp4_workload_rhoai3x_maas_coo_namespace: "openshift-cluster-observability-operator"
 ocp4_workload_rhoai3x_maas_coo_channel: "stable"
 
+# Red Hat build of OpenTelemetry — REQUIRED alongside COO. The RHOAI monitoring
+# stack (the platform Monitoring CR "default-monitoring") will NOT provision
+# without it; its precondition fails with "OpenTelemetryCollector operator must
+# be installed for OpenTelemetry configuration" and no Thanos/Prometheus deploys.
+# (Verified live on RHOAI 3.4.0 — collectorReplicas defaults to 2.)
+ocp4_workload_rhoai3x_maas_otel_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_otel_channel: "stable"
+
 # RHOAI monitoring stack (DSCInitialization.spec.monitoring.metrics).
 ocp4_workload_rhoai3x_maas_monitoring_namespace: "redhat-ods-monitoring"
 ocp4_workload_rhoai3x_maas_monitoring_replicas: 1

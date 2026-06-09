@@ -123,9 +123,12 @@ higher `priority`) for a different group to show tiered access.
 
 **a) Observability dashboard (Tech Preview)** — requires the observability
 **backend** (Option B), enabled by `ocp4_workload_rhoai3x_maas_observability_deploy: true`.
-This both deploys the backend (Cluster Observability Operator + RHOAI monitoring
-stack in `redhat-ods-monitoring` + Kuadrant observability + Tenant telemetry) and
-turns on the `observabilityDashboard` UI flag. **Do not** set the UI flag without
+This both deploys the backend (**Cluster Observability Operator** *and* the
+**Red Hat build of OpenTelemetry** operator + the RHOAI monitoring stack in
+`redhat-ods-monitoring` + Kuadrant observability + Tenant telemetry) and turns on
+the `observabilityDashboard` UI flag. Both operators are required — without the
+OpenTelemetry operator the RHOAI `default-monitoring` CR blocks on
+`OpenTelemetryCollector operator must be installed` and no Thanos/Prometheus deploys. **Do not** set the UI flag without
 the backend — that produces the "Service Unavailable" page (the deploy flag now
 gates the UI flag for exactly this reason).
 
