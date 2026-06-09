@@ -562,23 +562,28 @@ ocp4_workload_rhoai3x_maas_client_name: "maas-openwebui"
 ocp4_workload_rhoai3x_maas_client_namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
 # OpenWebUI upstream image (NOT UBI — third-party app; runs under restricted SCC).
 ocp4_workload_rhoai3x_maas_client_image: "ghcr.io/open-webui/open-webui:main"
-# Red Hat oauth-proxy (UBI) as the SSO sidecar.
-ocp4_workload_rhoai3x_maas_client_oauth_proxy_image: "registry.redhat.io/openshift4/ose-oauth-proxy:v4.14"
+# Red Hat oauth-proxy (UBI) as the SSO sidecar. Pin the tag to the cluster's
+# OpenShift minor (e.g. v4.20). The -rhel9 variant is used on 4.20.
+ocp4_workload_rhoai3x_maas_client_oauth_proxy_image: "registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.20"
 ocp4_workload_rhoai3x_maas_client_storage_size: "5Gi"
 ocp4_workload_rhoai3x_maas_client_replicas: 1
 
-# In-cluster MaaS gateway (OpenAI-compatible) the client points at, and the model
-# id it exposes. Reuses the Playground's gateway URL var (same endpoint).
-ocp4_workload_rhoai3x_maas_client_base_url: "{{ ocp4_workload_rhoai3x_playground_maas_base_url }}"
+# MaaS gateway URL the client points at. Empty => the task builds the EXTERNAL
+# gateway URL from the cluster ingress domain (https://maas.<domain>/<ns>/<isvc>/v1).
+# The external URL is used on purpose: OpenWebUI's httpx verifies TLS against the
+# system trust store, which trusts the router cert but NOT the in-cluster gateway
+# service cert. The model id it exposes follows.
+ocp4_workload_rhoai3x_maas_client_base_url: ""
 ocp4_workload_rhoai3x_maas_client_model_id: "{{ ocp4_workload_rhoai3x_maas_sample_model_name }}"
 
-# Shared sk- key (Phase 2a). Minted via the SAME flow + minter SA as the
-# Playground key (the SA is already a narrow owner of the subscription), stored in
-# its own Secret and injected via valueFrom (never hardcoded). Phase 2b replaces
-# this with per-user minting.
+# Shared sk- key (Phase 2a). Per the design decision it is EXTERNALLY PROVIDED,
+# NOT minted by the role: MaaS authorizes inference only for members of the
+# subscription GROUP (rhoai-users); the unattended minter SA is only a subscription
+# OWNER, so it can mint but its keys 403 on inference. Supply a key minted by a
+# real group member in this Secret (key `token`); the task asserts it exists. Real
+# per-user minting (each user's OAuth token IS authorized) lands in the Phase 2b
+# key-injecting proxy.
 ocp4_workload_rhoai3x_maas_client_key_secret: "maas-client-key"
-ocp4_workload_rhoai3x_maas_client_key_name: "maas-openwebui"
-ocp4_workload_rhoai3x_maas_client_key_expiry_days: 365
 
 ocp4_workload_rhoai3x_maas_client_wait_retries: 30
 ocp4_workload_rhoai3x_maas_client_wait_delay: 10

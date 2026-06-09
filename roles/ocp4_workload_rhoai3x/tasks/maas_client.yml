@@ -1,0 +1,283 @@
+---
+# ---------------------------------------------------------------------------
+# MaaS client — OpenWebUI chat front-end for Models-as-a-Service (Phase 2a)
+#
+# A polished multi-user chat UI that consumes the MaaS-governed endpoint with an
+# sk- key — the consumption path the dashboard Playground CANNOT use (it forces
+# the user's OpenShift token, which the gateway rejects; only sk- keys work).
+#
+# Stack (all in the MaaS sample namespace, CPU-only):
+#   - ServiceAccount (acts as the OAuth client via the oauth-redirectreference
+#     annotation — no cluster-scoped OAuthClient needed)
+#   - a Red Hat oauth-proxy (UBI) sidecar that does OpenShift OAuth SSO and passes
+#     the authenticated identity to OpenWebUI via X-Forwarded-* headers
+#   - OpenWebUI (trusts those headers) pointed at the external MaaS gateway with a
+#     shared sk- key injected from a Secret (valueFrom — never hardcoded)
+#   - serving-cert Service + reencrypt Route + a data PVC
+#
+# Requires: MaaS enabled + a published sample model, and the shared key Secret
+# (externally provided — see defaults; the role does not mint it). Per-user
+# metering is a later phase (key-injecting proxy).
+# ---------------------------------------------------------------------------
+
+- name: Assert the externally-provided shared MaaS key Secret exists
+  # MaaS authorizes inference only for subscription-GROUP members; the unattended
+  # minter SA can mint but its keys 403 on inference, so the shared key must come
+  # from a real group member. Fail early with guidance rather than 403 at runtime.
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mc_key
+  failed_when:
+  - _ocp4_workload_rhoai3x_mc_key.resources | length == 0
+
+- name: Resolve the cluster ingress domain (for the external gateway URL)
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: _ocp4_workload_rhoai3x_mc_ingress
+
+- name: Compute the OpenWebUI -> MaaS OpenAI base URL
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mc_base_url: >-
+      {{
+        ocp4_workload_rhoai3x_maas_client_base_url
+        if ocp4_workload_rhoai3x_maas_client_base_url | length > 0
+        else 'https://maas.' ~ _ocp4_workload_rhoai3x_mc_ingress.resources[0].spec.domain
+             ~ '/' ~ ocp4_workload_rhoai3x_maas_sample_namespace
+             ~ '/' ~ ocp4_workload_rhoai3x_maas_sample_isvc_name ~ '/v1'
+      }}
+
+- name: Create the OpenWebUI ServiceAccount (acts as the OAuth client)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        annotations:
+          # SA-as-OAuthClient: the redirect points at the Route by name, so the
+          # OpenShift OAuth server allows it without a cluster-scoped OAuthClient.
+          serviceaccounts.openshift.io/oauth-redirectreference.primary: >-
+            {"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"{{ ocp4_workload_rhoai3x_maas_client_name }}"}}
+
+- name: Look up the OpenWebUI session/cookie Secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-oauth"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mc_oauth_sec
+
+- name: Create the OpenWebUI session/cookie Secret (only if absent)
+  # Generated once and kept — regenerating every run would roll the pod and log
+  # everyone out. oauth-proxy needs a 16/24/32-byte cookie secret.
+  when: _ocp4_workload_rhoai3x_mc_oauth_sec.resources | length == 0
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-oauth"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+      stringData:
+        cookie-secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+        webui-secret: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+
+- name: Create the OpenWebUI data PVC
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-data"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: "{{ ocp4_workload_rhoai3x_maas_client_storage_size }}"
+
+- name: Create the OpenWebUI Service (serving cert for the oauth-proxy)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        annotations:
+          # The cluster service-CA mints the TLS cert the oauth-proxy serves.
+          service.beta.openshift.io/serving-cert-secret-name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-tls"
+      spec:
+        selector:
+          app: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        ports:
+        - name: https
+          port: 8443
+          targetPort: 8443
+
+- name: Deploy OpenWebUI + oauth-proxy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+      spec:
+        replicas: "{{ ocp4_workload_rhoai3x_maas_client_replicas | int }}"
+        selector:
+          matchLabels:
+            app: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        template:
+          metadata:
+            labels:
+              app: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+          spec:
+            serviceAccountName: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+            containers:
+            # --- SSO sidecar: OpenShift OAuth -> X-Forwarded-* identity headers ---
+            - name: oauth-proxy
+              image: "{{ ocp4_workload_rhoai3x_maas_client_oauth_proxy_image }}"
+              args:
+              - --provider=openshift
+              - --https-address=:8443
+              - --http-address=
+              - --upstream=http://localhost:8080
+              - --openshift-service-account={{ ocp4_workload_rhoai3x_maas_client_name }}
+              - --cookie-secret=$(OAUTH_COOKIE_SECRET)
+              - --tls-cert=/etc/tls/private/tls.crt
+              - --tls-key=/etc/tls/private/tls.key
+              - --pass-user-headers=true
+              - --skip-provider-button
+              env:
+              - name: OAUTH_COOKIE_SECRET
+                valueFrom:
+                  secretKeyRef:
+                    name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-oauth"
+                    key: cookie-secret
+              ports:
+              - containerPort: 8443
+                name: https
+              volumeMounts:
+              - name: tls
+                mountPath: /etc/tls/private
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+            # --- OpenWebUI: trusts the proxy's identity header, calls MaaS ---
+            - name: open-webui
+              image: "{{ ocp4_workload_rhoai3x_maas_client_image }}"
+              env:
+              - name: WEBUI_AUTH_TRUSTED_EMAIL_HEADER
+                value: X-Forwarded-Email
+              - name: WEBUI_AUTH_TRUSTED_NAME_HEADER
+                value: X-Forwarded-User
+              - name: OPENAI_API_BASE_URL
+                value: "{{ _ocp4_workload_rhoai3x_mc_base_url }}"
+              - name: OPENAI_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
+                    key: token
+              - name: WEBUI_SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-oauth"
+                    key: webui-secret
+              - name: ENABLE_OLLAMA_API
+                value: "false"
+              - name: DATA_DIR
+                value: /app/backend/data
+              ports:
+              - containerPort: 8080
+                name: http
+              volumeMounts:
+              - name: data
+                mountPath: /app/backend/data
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 2Gi
+            volumes:
+            - name: tls
+              secret:
+                secretName: "{{ ocp4_workload_rhoai3x_maas_client_name }}-tls"
+            - name: data
+              persistentVolumeClaim:
+                claimName: "{{ ocp4_workload_rhoai3x_maas_client_name }}-data"
+
+- name: Read the cluster service-CA bundle (for the reencrypt Route)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: openshift-service-ca.crt
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mc_svc_ca
+
+- name: Create the OpenWebUI Route (reencrypt to the oauth-proxy)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+      spec:
+        to:
+          kind: Service
+          name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+        port:
+          targetPort: https
+        tls:
+          termination: reencrypt
+          insecureEdgeTerminationPolicy: Redirect
+          destinationCACertificate: "{{ _ocp4_workload_rhoai3x_mc_svc_ca.resources[0].data['service-ca.crt'] }}"
+
+- name: Wait for the OpenWebUI deployment to become Available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mc_deploy
+  retries: "{{ ocp4_workload_rhoai3x_maas_client_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_client_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_mc_deploy.resources | length == 1
+  - _ocp4_workload_rhoai3x_mc_deploy.resources[0].status.readyReplicas is defined
+  - >-
+    _ocp4_workload_rhoai3x_mc_deploy.resources[0].status.readyReplicas | int
+    >= ocp4_workload_rhoai3x_maas_client_replicas | int

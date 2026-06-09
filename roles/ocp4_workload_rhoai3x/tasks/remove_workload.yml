@@ -290,6 +290,30 @@
 # 0a. AI Safety Guardrails (NeMo Guardrails) — remove before the model it guards.
 # The trustyai DSC component is reverted when the DataScienceCluster is deleted
 # later in this playbook, so only the namespaced objects are removed here.
+- name: Remove the MaaS client (OpenWebUI)
+  when:
+  - ocp4_workload_rhoai3x_maas_client_deploy | bool
+  vars:
+    _mc: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+    _ns: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  block:
+  - name: Remove OpenWebUI Route, Deployment, Service, SA, PVC, secrets
+    kubernetes.core.k8s:
+      state: absent
+      api_version: "{{ item.api }}"
+      kind: "{{ item.kind }}"
+      name: "{{ item.name }}"
+      namespace: "{{ _ns }}"
+    loop:
+    - {api: route.openshift.io/v1, kind: Route, name: "{{ _mc }}"}
+    - {api: apps/v1, kind: Deployment, name: "{{ _mc }}"}
+    - {api: v1, kind: Service, name: "{{ _mc }}"}
+    - {api: v1, kind: ServiceAccount, name: "{{ _mc }}"}
+    - {api: v1, kind: PersistentVolumeClaim, name: "{{ _mc }}-data"}
+    - {api: v1, kind: Secret, name: "{{ _mc }}-oauth"}
+    - {api: v1, kind: Secret, name: "{{ _mc }}-tls"}
+  # The shared key Secret is externally provided, so leave it in place.
+
 - name: Remove AI Safety Guardrails resources
   when:
   - ocp4_workload_rhoai3x_guardrails_enable | bool
