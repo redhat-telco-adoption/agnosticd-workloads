@@ -310,11 +310,20 @@ ocp4_workload_rhoai3x_maas_sample_memory_limits: "16Gi"
 ocp4_workload_rhoai3x_maas_sample_isvc_wait_retries: 60
 ocp4_workload_rhoai3x_maas_sample_isvc_wait_delay: 30
 
+# Gen AI asset metadata — required for the model to appear under
+# Gen AI studio -> AI asset endpoints in the dashboard.
+ocp4_workload_rhoai3x_maas_sample_display_name: "gpt-oss-20b (MaaS)"
+ocp4_workload_rhoai3x_maas_sample_description: "gpt-oss-20b published via Models-as-a-Service"
+ocp4_workload_rhoai3x_maas_sample_genai_use_case: "chat"
+
 # Governance objects
 ocp4_workload_rhoai3x_maas_modelref_name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
 ocp4_workload_rhoai3x_maas_subscription_name: "rhoai-team"
 ocp4_workload_rhoai3x_maas_authpolicy_name: "rhoai-team-auth"
 ocp4_workload_rhoai3x_maas_subscription_group: "rhoai-users"
+# Members of the subscription group (must exist as OpenShift users to consume MaaS).
+ocp4_workload_rhoai3x_maas_subscription_group_users:
+- admin
 ocp4_workload_rhoai3x_maas_token_limit: 1000000
 # Window units: s/m/h only (no days) — e.g. "24h", not "1d".
 ocp4_workload_rhoai3x_maas_token_window: "1h"

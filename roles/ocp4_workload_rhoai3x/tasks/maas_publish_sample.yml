@@ -6,6 +6,18 @@
 # InferenceService from model_deployment.yml), and KServe schedules whole GPUs,
 # so this model needs its own GPU alongside the base model.
 
+- name: Ensure the MaaS subscription group exists
+  # The Subscription and AuthPolicy grant access to this group; it must exist
+  # (with members) for users to consume the model and see their subscription.
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: user.openshift.io/v1
+      kind: Group
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_subscription_group }}"
+      users: "{{ ocp4_workload_rhoai3x_maas_subscription_group_users }}"
+
 - name: Gather GPU capacity for the sample model
   kubernetes.core.k8s_info:
     api_version: v1
@@ -37,8 +49,18 @@
       metadata:
         name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+        # genai-asset + genai-use-case/model-type/display-name are what make the
+        # model show up under Gen AI studio -> AI asset endpoints. Without them
+        # the dashboard does not recognise the deployment as a Gen AI asset.
         labels:
           opendatahub.io/dashboard: "true"
+          opendatahub.io/genai-asset: "true"
+          networking.kserve.io/visibility: exposed
+        annotations:
+          opendatahub.io/genai-use-case: "{{ ocp4_workload_rhoai3x_maas_sample_genai_use_case }}"
+          opendatahub.io/model-type: generative
+          openshift.io/display-name: "{{ ocp4_workload_rhoai3x_maas_sample_display_name }}"
+          openshift.io/description: "{{ ocp4_workload_rhoai3x_maas_sample_description }}"
       spec:
         replicas: "{{ ocp4_workload_rhoai3x_maas_sample_replicas | int }}"
         model:
