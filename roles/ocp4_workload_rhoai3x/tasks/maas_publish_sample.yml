@@ -1,0 +1,136 @@
+---
+# Sample MaaS publish: deploy a small model as a vLLM-on-MaaS LLMInferenceService
+# and govern it with a MaaSModelRef + MaaSSubscription + MaaSAuthPolicy.
+#
+# MaaSModelRef accepts only LLMInferenceService or ExternalModel (not the legacy
+# InferenceService from model_deployment.yml), and KServe schedules whole GPUs,
+# so this model needs its own GPU alongside the base model.
+
+- name: Gather GPU capacity for the sample model
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    label_selectors:
+    - "nvidia.com/gpu.present=true"
+  register: _ocp4_workload_rhoai3x_maas_gpu_nodes
+
+- name: Require at least two allocatable GPUs (base model + MaaS sample)
+  ansible.builtin.assert:
+    that:
+    - >-
+      _ocp4_workload_rhoai3x_maas_gpu_nodes.resources
+      | map(attribute='status.allocatable')
+      | map('default', {}, true)
+      | map(attribute='nvidia.com/gpu', default='0')
+      | map('int') | sum >= 2
+    fail_msg: >-
+      The MaaS sample publish needs a second GPU (one for the base model, one
+      for the published model). Set ocp4_workload_rhoai3x_gpu_node_count >= 2.
+    success_msg: "At least two allocatable GPUs available."
+
+- name: Create the LLMInferenceService (vLLM-on-MaaS) for the sample model
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: serving.kserve.io/v1alpha1
+      kind: LLMInferenceService
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+        labels:
+          opendatahub.io/dashboard: "true"
+      spec:
+        replicas: "{{ ocp4_workload_rhoai3x_maas_sample_replicas | int }}"
+        model:
+          uri: "{{ ocp4_workload_rhoai3x_maas_sample_model_uri }}"
+          name: "{{ ocp4_workload_rhoai3x_maas_sample_model_name }}"
+        router:
+          route: {}
+          scheduler: {}
+          gateway:
+            refs:
+            - name: "{{ ocp4_workload_rhoai3x_maas_gateway_name }}"
+              namespace: "{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}"
+        template:
+          containers:
+          - name: main
+            env:
+            # Appended to the preset's `vllm serve` command (e.g. gpt-oss parsers).
+            - name: VLLM_ADDITIONAL_ARGS
+              value: "{{ ocp4_workload_rhoai3x_maas_sample_vllm_args }}"
+            resources:
+              limits:
+                cpu: "{{ ocp4_workload_rhoai3x_maas_sample_cpu_limits }}"
+                memory: "{{ ocp4_workload_rhoai3x_maas_sample_memory_limits }}"
+                nvidia.com/gpu: "{{ ocp4_workload_rhoai3x_maas_sample_gpu_count }}"
+              requests:
+                cpu: "{{ ocp4_workload_rhoai3x_maas_sample_cpu_requests }}"
+                memory: "{{ ocp4_workload_rhoai3x_maas_sample_memory_requests }}"
+                nvidia.com/gpu: "{{ ocp4_workload_rhoai3x_maas_sample_gpu_count }}"
+
+- name: Wait for the LLMInferenceService to be Ready
+  kubernetes.core.k8s_info:
+    api_version: serving.kserve.io/v1alpha1
+    kind: LLMInferenceService
+    name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_llmisvc
+  retries: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_maas_llmisvc.resources | length == 1
+  - >-
+    _ocp4_workload_rhoai3x_maas_llmisvc.resources[0].status.conditions
+    | default([]) | selectattr('type', 'equalto', 'Ready')
+    | selectattr('status', 'equalto', 'True') | list | length == 1
+
+- name: Publish the model to MaaS (MaaSModelRef)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: maas.opendatahub.io/v1alpha1
+      kind: MaaSModelRef
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_modelref_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+      spec:
+        modelRef:
+          kind: LLMInferenceService
+          name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+
+- name: Create the MaaS subscription (token rate limits)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      spec:
+        owner:
+          groups:
+          - name: "{{ ocp4_workload_rhoai3x_maas_subscription_group }}"
+        modelRefs:
+        - name: "{{ ocp4_workload_rhoai3x_maas_modelref_name }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+          tokenRateLimits:
+          - limit: "{{ ocp4_workload_rhoai3x_maas_token_limit | int }}"
+            window: "{{ ocp4_workload_rhoai3x_maas_token_window }}"
+
+- name: Create the MaaS authorization policy (gateway access)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: maas.opendatahub.io/v1alpha1
+      kind: MaaSAuthPolicy
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_authpolicy_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      spec:
+        subjects:
+          groups:
+          - name: "{{ ocp4_workload_rhoai3x_maas_subscription_group }}"
+        modelRefs:
+        - name: "{{ ocp4_workload_rhoai3x_maas_modelref_name }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"

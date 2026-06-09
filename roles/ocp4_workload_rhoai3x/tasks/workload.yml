@@ -74,4 +74,10 @@
 - name: Enable Models-as-a-Service in the DataScienceCluster and dashboard
   when: ocp4_workload_rhoai3x_maas_enable | bool
   ansible.builtin.include_tasks: maas_enable.yml
+
+- name: Publish a sample model to Models-as-a-Service
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_publish_sample | bool
+  ansible.builtin.include_tasks: maas_publish_sample.yml
 # --------------------------------------------------------------------------

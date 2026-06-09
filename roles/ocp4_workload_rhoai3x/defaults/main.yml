@@ -281,9 +281,40 @@ ocp4_workload_rhoai3x_maas_namespace: "models-as-a-service"
 ocp4_workload_rhoai3x_maas_tenant_wait_retries: 30
 ocp4_workload_rhoai3x_maas_tenant_wait_delay: 20
 
-# --- Sample publish (demo MaaSModelRef + Subscription + AuthPolicy) ---
-# Built in a later layer; flag declared here so the toggle exists.
+# --- Sample publish (demo LLMInferenceService + MaaSModelRef + Subscription + AuthPolicy) ---
+# Deploys a small model as a vLLM-on-MaaS LLMInferenceService and governs it with
+# a subscription + auth policy. MaaSModelRef only accepts LLMInferenceService or
+# ExternalModel (not the legacy InferenceService used by model_deployment.yml), and
+# KServe schedules whole GPUs — so this needs a SECOND GPU alongside the base model.
+# Requirement: ocp4_workload_rhoai3x_gpu_node_count >= 2 (asserted at run time).
 ocp4_workload_rhoai3x_maas_publish_sample: true
+
+# Sample model — reuses the base model's oci:// modelcar (proven storage path).
+# NOTE: do NOT use hf:// here — under OpenShift's arbitrary UID the HF downloader
+# fails to place weights (it cannot write its atomic-replace temp file to /mnt,
+# which is owned kserve:kserve 0755). oci:// modelcar copies straight into
+# /mnt/models and avoids this. The LLMInferenceServiceConfig preset already uses
+# the rhaii vLLM image and appends ${VLLM_ADDITIONAL_ARGS} to `vllm serve`.
+ocp4_workload_rhoai3x_maas_sample_isvc_name: "maas-gpt-oss-20b"
+ocp4_workload_rhoai3x_maas_sample_namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+ocp4_workload_rhoai3x_maas_sample_model_uri: "{{ ocp4_workload_rhoai3x_model_storage_uri }}"
+ocp4_workload_rhoai3x_maas_sample_model_name: "{{ ocp4_workload_rhoai3x_model_name }}"
+# vLLM args appended to the preset's `vllm serve` (e.g. gpt-oss reasoning/tool parsers).
+ocp4_workload_rhoai3x_maas_sample_vllm_args: "{{ ocp4_workload_rhoai3x_model_extra_args | join(' ') }}"
+ocp4_workload_rhoai3x_maas_sample_replicas: 1
+ocp4_workload_rhoai3x_maas_sample_gpu_count: "1"
+ocp4_workload_rhoai3x_maas_sample_cpu_requests: "2"
+ocp4_workload_rhoai3x_maas_sample_cpu_limits: "4"
+ocp4_workload_rhoai3x_maas_sample_memory_requests: "8Gi"
+ocp4_workload_rhoai3x_maas_sample_memory_limits: "16Gi"
+ocp4_workload_rhoai3x_maas_sample_isvc_wait_retries: 60
+ocp4_workload_rhoai3x_maas_sample_isvc_wait_delay: 30
+
+# Governance objects
+ocp4_workload_rhoai3x_maas_modelref_name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+ocp4_workload_rhoai3x_maas_subscription_name: "rhoai-team"
+ocp4_workload_rhoai3x_maas_authpolicy_name: "rhoai-team-auth"
 ocp4_workload_rhoai3x_maas_subscription_group: "rhoai-users"
 ocp4_workload_rhoai3x_maas_token_limit: 1000000
+# Window units: s/m/h only (no days) — e.g. "24h", not "1d".
 ocp4_workload_rhoai3x_maas_token_window: "1h"
