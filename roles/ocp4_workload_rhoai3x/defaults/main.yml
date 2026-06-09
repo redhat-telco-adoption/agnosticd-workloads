@@ -545,3 +545,40 @@ ocp4_workload_rhoai3x_maas_telemetry_capture_model_usage: true
 # COO is frequently shared with other workloads (e.g. coo_incident_detection);
 # removing it would break them. Only enable on a cluster where this role owns COO.
 ocp4_workload_rhoai3x_maas_observability_remove_coo: false
+
+# ---------------------------------------------------------------------------
+# MaaS client — OpenWebUI chat front-end for Models-as-a-Service
+# A polished multi-user chat UI that consumes the MaaS-governed endpoint with an
+# sk- key — the consumption path the dashboard Playground CANNOT use (it forces
+# the user's OpenShift token, which the gateway rejects). CPU-only; independent
+# of the GPU work. Requires MaaS enabled + a published model.
+#
+# Phase 2a (this block): OpenWebUI + OpenShift OAuth SSO (oauth-proxy sidecar,
+# ServiceAccount-as-OAuthClient — no cluster-scoped OAuthClient) + ONE SHARED
+# sk- key. Phase 2b swaps the shared key for a per-user key-injecting proxy.
+# ---------------------------------------------------------------------------
+ocp4_workload_rhoai3x_maas_client_deploy: false        # master switch
+ocp4_workload_rhoai3x_maas_client_name: "maas-openwebui"
+ocp4_workload_rhoai3x_maas_client_namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+# OpenWebUI upstream image (NOT UBI — third-party app; runs under restricted SCC).
+ocp4_workload_rhoai3x_maas_client_image: "ghcr.io/open-webui/open-webui:main"
+# Red Hat oauth-proxy (UBI) as the SSO sidecar.
+ocp4_workload_rhoai3x_maas_client_oauth_proxy_image: "registry.redhat.io/openshift4/ose-oauth-proxy:v4.14"
+ocp4_workload_rhoai3x_maas_client_storage_size: "5Gi"
+ocp4_workload_rhoai3x_maas_client_replicas: 1
+
+# In-cluster MaaS gateway (OpenAI-compatible) the client points at, and the model
+# id it exposes. Reuses the Playground's gateway URL var (same endpoint).
+ocp4_workload_rhoai3x_maas_client_base_url: "{{ ocp4_workload_rhoai3x_playground_maas_base_url }}"
+ocp4_workload_rhoai3x_maas_client_model_id: "{{ ocp4_workload_rhoai3x_maas_sample_model_name }}"
+
+# Shared sk- key (Phase 2a). Minted via the SAME flow + minter SA as the
+# Playground key (the SA is already a narrow owner of the subscription), stored in
+# its own Secret and injected via valueFrom (never hardcoded). Phase 2b replaces
+# this with per-user minting.
+ocp4_workload_rhoai3x_maas_client_key_secret: "maas-client-key"
+ocp4_workload_rhoai3x_maas_client_key_name: "maas-openwebui"
+ocp4_workload_rhoai3x_maas_client_key_expiry_days: 365
+
+ocp4_workload_rhoai3x_maas_client_wait_retries: 30
+ocp4_workload_rhoai3x_maas_client_wait_delay: 10
