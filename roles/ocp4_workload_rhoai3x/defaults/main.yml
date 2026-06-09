@@ -348,3 +348,42 @@ ocp4_workload_rhoai3x_maas_subscription_group_users:
 ocp4_workload_rhoai3x_maas_token_limit: 1000000
 # Window units: s/m/h only (no days) — e.g. "24h", not "1d".
 ocp4_workload_rhoai3x_maas_token_window: "1h"
+
+# ---------------------------------------------------------------------------
+# AI Safety Guardrails — NeMo Guardrails via TrustyAI — optional feature (opt-in)
+# Puts a NeMo Guardrails service in front of the deployed model and applies
+# Presidio-backed PII / sensitive-data detection on inputs and outputs.
+# Requires a deployed model (model_deploy) and sets the TrustyAI DSC component
+# to Managed. The CR + SA + Secret + ConfigMap live in the model's namespace.
+# See GUARDRAILS-SHOWCASE.md for the demo walkthrough.
+# ---------------------------------------------------------------------------
+ocp4_workload_rhoai3x_guardrails_enable: false
+
+# Namespace for all guardrails objects — must match the model's namespace.
+ocp4_workload_rhoai3x_guardrails_namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
+# Names (the operator derives the Deployment/Service/Route from the CR name).
+ocp4_workload_rhoai3x_guardrails_name: "nemo-guardrails"
+ocp4_workload_rhoai3x_guardrails_config_name: "nemo-guardrails-config"
+ocp4_workload_rhoai3x_guardrails_sa_name: "nemo-guardrails-service-account"
+ocp4_workload_rhoai3x_guardrails_token_secret: "api-token-secret"
+
+# The model NeMo guards. Defaults to the model deployed by this role.
+ocp4_workload_rhoai3x_guardrails_model_name: "{{ ocp4_workload_rhoai3x_model_name }}"
+# OpenAI-compatible base URL of the model predictor (raw KServe headless svc,
+# HTTP on port 80, path /v1). Override if your serving mode differs (e.g. TLS:8443).
+ocp4_workload_rhoai3x_guardrails_model_predictor_url: "http://{{ ocp4_workload_rhoai3x_guardrails_model_name }}-predictor.{{ ocp4_workload_rhoai3x_guardrails_namespace }}.svc.cluster.local/v1"
+
+# Presidio entity types to detect on input and output (case-sensitive).
+ocp4_workload_rhoai3x_guardrails_pii_entities_input:
+- EMAIL_ADDRESS
+- PERSON
+- CREDIT_CARD
+- PHONE_NUMBER
+ocp4_workload_rhoai3x_guardrails_pii_entities_output:
+- PERSON
+
+ocp4_workload_rhoai3x_guardrails_replicas: 1
+# Wait for the NeMo Guardrails Deployment to become ready.
+ocp4_workload_rhoai3x_guardrails_wait_retries: 30
+ocp4_workload_rhoai3x_guardrails_wait_delay: 10

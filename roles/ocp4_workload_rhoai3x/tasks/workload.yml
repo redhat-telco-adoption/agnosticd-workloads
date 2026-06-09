@@ -40,6 +40,12 @@
   - ocp4_workload_rhoai3x_model_deploy | bool
   ansible.builtin.include_tasks: gen_ai_playground.yml
 
+- name: Configure AI Safety Guardrails (NeMo Guardrails)
+  when:
+  - ocp4_workload_rhoai3x_guardrails_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  ansible.builtin.include_tasks: guardrails.yml
+
 # --- Models-as-a-Service (optional, RHOAI 3.4+) ---------------------------
 # Prerequisites first (UWM, PostgreSQL, db secret, Connectivity Link, Gateway,
 # Authorino TLS), then flip the DSC/dashboard MaaS switches and verify the tenant.

@@ -176,6 +176,54 @@
         item.metadata.name is search('rhcl-operator')
         or item.metadata.name is search('cloudnative-pg')
 
+# 0a. AI Safety Guardrails (NeMo Guardrails) — remove before the model it guards.
+# The trustyai DSC component is reverted when the DataScienceCluster is deleted
+# later in this playbook, so only the namespaced objects are removed here.
+- name: Remove AI Safety Guardrails resources
+  when:
+  - ocp4_workload_rhoai3x_guardrails_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  block:
+  - name: Remove NemoGuardrails resource
+    kubernetes.core.k8s:
+      state: absent
+      api_version: trustyai.opendatahub.io/v1alpha1
+      kind: NemoGuardrails
+      name: "{{ ocp4_workload_rhoai3x_guardrails_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails ConfigMap
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: ConfigMap
+      name: "{{ ocp4_workload_rhoai3x_guardrails_config_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails API token Secret
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails view RoleBinding
+    kubernetes.core.k8s:
+      state: absent
+      api_version: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}-view"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails ServiceAccount
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: ServiceAccount
+      name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
 # 0. Gen AI Playground (LlamaStackDistribution + ConfigMap)
 - name: Remove LlamaStackDistribution
   when:

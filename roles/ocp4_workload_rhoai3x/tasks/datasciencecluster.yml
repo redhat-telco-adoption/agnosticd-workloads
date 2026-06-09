@@ -53,6 +53,8 @@
             managementState: Removed
           trainingoperator:
             managementState: Removed
+          trustyai:
+            managementState: "{{ 'Managed' if ocp4_workload_rhoai3x_guardrails_enable | bool else 'Removed' }}"
           mlflowoperator:
             managementState: "{{ 'Managed' if ocp4_workload_rhoai3x_mlflow_deploy | bool else 'Removed' }}"
           modelregistry:
