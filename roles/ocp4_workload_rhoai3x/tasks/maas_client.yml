@@ -213,6 +213,12 @@
                     key: webui-secret
               - name: ENABLE_OLLAMA_API
                 value: "false"
+              # New SSO users are auto-activated. OpenWebUI defaults new signups to
+              # role "pending" (needs admin approval) — wrong for a self-serve,
+              # per-user-metered demo. "user" lets any OAuth-authenticated user chat
+              # immediately. The admin (first signup) stays admin regardless.
+              - name: DEFAULT_USER_ROLE
+                value: "{{ ocp4_workload_rhoai3x_maas_client_default_user_role }}"
               - name: DATA_DIR
                 value: /app/backend/data
               ports:

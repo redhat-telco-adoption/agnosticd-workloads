@@ -567,6 +567,9 @@ ocp4_workload_rhoai3x_maas_client_image: "ghcr.io/open-webui/open-webui:main"
 ocp4_workload_rhoai3x_maas_client_oauth_proxy_image: "registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.20"
 ocp4_workload_rhoai3x_maas_client_storage_size: "5Gi"
 ocp4_workload_rhoai3x_maas_client_replicas: 1
+# Role assigned to new SSO users: "user" (auto-active, self-serve) or "pending"
+# (admin must approve each). "user" suits the per-user-metering demo.
+ocp4_workload_rhoai3x_maas_client_default_user_role: "user"
 
 # MaaS gateway URL the client points at. Empty => the task builds the EXTERNAL
 # gateway URL from the cluster ingress domain (https://maas.<domain>/<ns>/<isvc>/v1).
