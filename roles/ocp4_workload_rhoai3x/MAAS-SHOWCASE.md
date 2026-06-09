@@ -143,12 +143,19 @@ gates the UI flag for exactly this reason).
 - Metrics only appear **after** models are accessed; an empty dashboard before any
   inference is expected. It is **showback, not billing-grade** — for precise
   chargeback read the Limitador metrics endpoint directly.
-- **Driving usage from the Gen AI Playground:** the Playground dropdown offers the
-  model three ways — direct (`gpt-oss-20b`), **MaaS-metered** (`...-maas`, routed
-  through the gateway with an auto-minted sk- key), and **Guardrails-filtered**
-  (`...-guardrails`). Only the **MaaS** entry flows through Limitador, so pick it
-  to make the Usage dashboard move. (Direct/Guardrails calls hit the predictor and
-  are **not** metered.)
+- **Driving usage (NOT from the dashboard Playground):** the dashboard Gen AI
+  Playground cannot drive MaaS metering. It injects the logged-in user's
+  OpenShift token into every LlamaStack `remote::vllm` provider (via the
+  `x-llamastack-provider-data` header), which overrides any configured api_token.
+  The MaaS gateway rejects OpenShift tokens (only `sk-oai-` keys authenticate), so
+  a MaaS provider in the Playground always returns **401 / blank**. That is why
+  the Playground dropdown intentionally offers only **direct** and
+  **Guardrails-filtered** entries (`ocp4_workload_rhoai3x_playground_maas_model`
+  is `false`). To drive the Usage dashboard, generate traffic through a client
+  that sends an **sk- key** directly: the model's own **"Generate API key → Try in
+  playground"** flow, or any OpenAI-compatible client / the CLI in §2. (Enabling a
+  Playground MaaS entry would require an auth-injecting proxy in front of the
+  gateway to swap the user token for an sk- key.)
 
 > Heavy, cluster-wide change. COO may be shared with `coo_incident_detection`;
 > teardown leaves COO intact unless `..._maas_observability_remove_coo: true`.
