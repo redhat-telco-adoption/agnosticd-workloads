@@ -121,6 +121,28 @@ ocp4_workload_rhoai3x_gen_ai_playground_max_tokens: 4096
 ocp4_workload_rhoai3x_gen_ai_playground_wait_retries: 20
 ocp4_workload_rhoai3x_gen_ai_playground_wait_delay: 15
 
+# --- Extra Playground models (added automatically when their backend exists) ---
+# So the user can pick, in the Playground dropdown, between the direct model and:
+#   - the MaaS-governed model (metered) — usage flows through the gateway and
+#     shows up in the MaaS Usage dashboard. Added when MaaS + sample are on.
+#   - the Guardrails-protected model (PII filtered). Added when guardrails is on.
+ocp4_workload_rhoai3x_playground_maas_model: "{{ (ocp4_workload_rhoai3x_maas_enable | bool) and (ocp4_workload_rhoai3x_maas_publish_sample | bool) }}"
+ocp4_workload_rhoai3x_playground_guardrails_model: "{{ ocp4_workload_rhoai3x_guardrails_enable | bool }}"
+
+# In-cluster OpenAI base URLs for the two extra providers.
+ocp4_workload_rhoai3x_playground_maas_base_url: "https://{{ ocp4_workload_rhoai3x_maas_gateway_name }}-{{ ocp4_workload_rhoai3x_maas_gateway_class_name }}.{{ ocp4_workload_rhoai3x_maas_gateway_namespace }}.svc.cluster.local/{{ ocp4_workload_rhoai3x_maas_sample_namespace }}/{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}/v1"
+ocp4_workload_rhoai3x_playground_guardrails_base_url: "https://{{ ocp4_workload_rhoai3x_guardrails_name }}.{{ ocp4_workload_rhoai3x_guardrails_namespace }}.svc.cluster.local/v1"
+
+# MaaS sk- key minting for the Playground's MaaS provider. A dedicated SA is
+# added as a NARROW owner.user of the subscription (least privilege — just this
+# SA, not a group), then used to mint a key via the maas-api. Key is stored in a
+# Secret and injected into the LSD via valueFrom (never hardcoded).
+# The Guardrails provider needs no key — it reuses the guardrails SA token secret.
+ocp4_workload_rhoai3x_playground_maas_minter_sa: "playground-maas-minter"
+ocp4_workload_rhoai3x_playground_maas_key_secret: "playground-maas-key"
+ocp4_workload_rhoai3x_playground_maas_key_name: "genai-playground"
+ocp4_workload_rhoai3x_playground_maas_key_expiry_days: 365
+
 # Retries / delay for waiting on DataScienceCluster Ready status
 ocp4_workload_rhoai3x_dsc_wait_retries: 30
 ocp4_workload_rhoai3x_dsc_wait_delay: 20

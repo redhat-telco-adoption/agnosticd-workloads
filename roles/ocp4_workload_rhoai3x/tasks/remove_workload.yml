@@ -335,6 +335,39 @@
       name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
       namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
 
+# 0c. Playground MaaS key + minter (added when the MaaS model is in the dropdown)
+- name: Remove Playground MaaS key resources
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_playground_maas_model | bool
+  block:
+  - name: Remove the minter SA from the MaaS subscription owner.users
+    kubernetes.core.k8s:
+      state: patched
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      definition:
+        spec:
+          owner:
+            users: []
+    failed_when: false
+
+  - name: Remove the Playground MaaS key + minter Secrets and SA
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: "{{ item.kind }}"
+      name: "{{ item.name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+    loop:
+    - { kind: Secret, name: "{{ ocp4_workload_rhoai3x_playground_maas_key_secret }}" }
+    - { kind: Secret, name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}-token" }
+    - { kind: ServiceAccount, name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}" }
+    loop_control:
+      label: "{{ item.kind }}/{{ item.name }}"
+
 # 0. Gen AI Playground (LlamaStackDistribution + ConfigMap)
 - name: Remove LlamaStackDistribution
   when:

@@ -143,6 +143,12 @@ gates the UI flag for exactly this reason).
 - Metrics only appear **after** models are accessed; an empty dashboard before any
   inference is expected. It is **showback, not billing-grade** — for precise
   chargeback read the Limitador metrics endpoint directly.
+- **Driving usage from the Gen AI Playground:** the Playground dropdown offers the
+  model three ways — direct (`gpt-oss-20b`), **MaaS-metered** (`...-maas`, routed
+  through the gateway with an auto-minted sk- key), and **Guardrails-filtered**
+  (`...-guardrails`). Only the **MaaS** entry flows through Limitador, so pick it
+  to make the Usage dashboard move. (Direct/Guardrails calls hit the predictor and
+  are **not** metered.)
 
 > Heavy, cluster-wide change. COO may be shared with `coo_incident_detection`;
 > teardown leaves COO intact unless `..._maas_observability_remove_coo: true`.
