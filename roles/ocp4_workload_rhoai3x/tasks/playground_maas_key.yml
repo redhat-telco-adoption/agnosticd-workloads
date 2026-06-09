@@ -111,3 +111,23 @@
         stringData:
           token: "{{ _ocp4_workload_rhoai3x_pg_key_resp.json.key }}"
     no_log: true
+
+  - name: Wait for the gateway to accept the freshly minted key
+    # A newly minted sk- key is not usable the instant maas-api returns it: the
+    # backing apikey Secret must reconcile into Authorino's cache before the
+    # gateway authorizes it. Until then inference returns 401. Without this gate
+    # the playbook finishes (and the Playground starts) while auth is still cold,
+    # so the MaaS model "immediately comes back with no response" for a few
+    # minutes. Poll the gateway with the key until it authorizes (200).
+    ansible.builtin.uri:
+      url: "{{ ocp4_workload_rhoai3x_playground_maas_base_url }}/models"
+      method: GET
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ _ocp4_workload_rhoai3x_pg_key_resp.json.key }}"
+      status_code: [200]
+    register: _ocp4_workload_rhoai3x_pg_key_ready
+    retries: 24
+    delay: 5
+    until: _ocp4_workload_rhoai3x_pg_key_ready.status == 200
+    no_log: true
