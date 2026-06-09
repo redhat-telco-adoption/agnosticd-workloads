@@ -13,10 +13,12 @@
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: llama-stack-config
+        # Role-owned name + NO opendatahub.io/dashboard label, so the dashboard
+        # does not adopt/regenerate it (see defaults for the full rationale).
+        name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_config_name }}"
         namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
         labels:
-          opendatahub.io/dashboard: "true"
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
       data:
         config.yaml: |
           # Llama Stack Configuration
@@ -164,7 +166,7 @@
           distribution:
             name: rh-dev
           userConfig:
-            configMapName: llama-stack-config
+            configMapName: "{{ ocp4_workload_rhoai3x_gen_ai_playground_config_name }}"
           containerSpec:
             name: llama-stack
             port: 8321

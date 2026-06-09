@@ -1,0 +1,87 @@
+---
+# Models-as-a-Service prerequisite: TLS between the Gateway (Envoy) and Authorino.
+# Follows the documented service-ca serving-cert flow:
+#   1. annotate the Authorino authorization service so service-ca issues a cert
+#   2. enable the TLS listener on the Authorino CR, pointing at that cert
+#   3. set the CA bundle env vars on the Authorino deployment
+# The gateway-side annotation (authorino-tls-bootstrap) is applied in
+# maas_gateway.yml, which triggers the MaaS controller to create the EnvoyFilter.
+
+- name: Wait for the Authorino authorization service to exist
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    name: authorino-authorino-authorization
+    namespace: "{{ ocp4_workload_rhoai3x_maas_authorino_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_authorino_svc
+  retries: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay }}"
+  until: _ocp4_workload_rhoai3x_maas_authorino_svc.resources | length == 1
+
+- name: Annotate the Authorino service for a service-ca serving certificate
+  kubernetes.core.k8s:
+    state: patched
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: authorino-authorino-authorization
+        namespace: "{{ ocp4_workload_rhoai3x_maas_authorino_namespace }}"
+        annotations:
+          service.beta.openshift.io/serving-cert-secret-name: authorino-server-cert
+
+- name: Wait for the service-ca to generate the authorino-server-cert secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: authorino-server-cert
+    namespace: "{{ ocp4_workload_rhoai3x_maas_authorino_namespace }}"
+  register: _ocp4_workload_rhoai3x_maas_authorino_cert
+  retries: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay }}"
+  until: _ocp4_workload_rhoai3x_maas_authorino_cert.resources | length == 1
+
+- name: Enable the TLS listener on the Authorino instance
+  kubernetes.core.k8s:
+    state: patched
+    definition:
+      apiVersion: operator.authorino.kuadrant.io/v1beta1
+      kind: Authorino
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_maas_authorino_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_authorino_namespace }}"
+      spec:
+        listener:
+          tls:
+            enabled: true
+            certSecretRef:
+              name: authorino-server-cert
+
+# NOTE (validated 2026-06-08): these env vars are set per the 3.4 docs, but the
+# referenced path is NOT auto-populated in the Authorino container — the doc
+# omits the service-ca ConfigMap + volume mount. This is non-blocking for the
+# default API-key MaaS flow (the tenant reaches Ready / Degraded=False without
+# it; the vars only affect Authorino's *outbound* OIDC TLS verification). The
+# TLS listener above — the part the Gateway<->Authorino EnvoyFilter relies on —
+# uses authorino-server-cert and works. If external-OIDC subscriptions are
+# needed later, also mount a service-ca bundle (inject-cabundle ConfigMap) at
+# this path. Kept as-is to match the documented procedure.
+- name: Configure the Authorino deployment with the service-ca bundle
+  kubernetes.core.k8s:
+    state: patched
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: authorino
+        namespace: "{{ ocp4_workload_rhoai3x_maas_authorino_namespace }}"
+      spec:
+        template:
+          spec:
+            containers:
+            - name: authorino
+              env:
+              - name: SSL_CERT_FILE
+                value: /etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt
+              - name: REQUESTS_CA_BUNDLE
+                value: /etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt

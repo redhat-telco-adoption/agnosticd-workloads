@@ -106,6 +106,14 @@ ocp4_workload_rhoai3x_gen_ai_studio_enable: true
 # LlamaStackDistribution name — appears in the Gen AI Studio project dropdown
 ocp4_workload_rhoai3x_gen_ai_playground_name: "lsd-genai-playground"
 
+# Name of the LlamaStack userConfig ConfigMap. Deliberately NOT the dashboard's
+# well-known "llama-stack-config": the RHOAI 3.4 dashboard regenerates that name
+# (and any configmap labelled opendatahub.io/dashboard=true) from a built-in
+# template that still references the removed `agents` API, which reverts our fix
+# and crashloops the pod. Using a role-owned name + no dashboard label keeps our
+# config out of the dashboard's management surface.
+ocp4_workload_rhoai3x_gen_ai_playground_config_name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_name }}-config"
+
 # Max tokens passed to the vLLM provider in the LlamaStack config
 ocp4_workload_rhoai3x_gen_ai_playground_max_tokens: 4096
 
@@ -208,3 +216,133 @@ ocp4_workload_rhoai3x_model_timeout: 30
 ocp4_workload_rhoai3x_model_wait_ready: true
 ocp4_workload_rhoai3x_model_ready_retries: 60
 ocp4_workload_rhoai3x_model_ready_delay: 30
+
+# ---------------------------------------------------------------------------
+# Models-as-a-Service (MaaS) — optional feature (RHOAI 3.4+)
+# Subscription-based governance/quota for LLM serving. OFF by default.
+# When enabled, this feature provisions: User Workload Monitoring, a
+# PostgreSQL 14+ instance (via cloudnative-pg), the maas-db-config secret,
+# Red Hat Connectivity Link (Kuadrant + Authorino + Limitador), a Gateway API
+# Gateway, Authorino TLS, and flips the DSC/dashboard MaaS switches.
+# See docs/maas-feature-plan.md.
+# ---------------------------------------------------------------------------
+ocp4_workload_rhoai3x_maas_enable: false
+
+# --- User Workload Monitoring (without it MaaS reports Degraded) ---
+ocp4_workload_rhoai3x_maas_uwm_enable: true
+
+# --- PostgreSQL (via the cloudnative-pg operator) ---
+# Set deploy_postgres=false to point maas-db-config at an external PG instead.
+ocp4_workload_rhoai3x_maas_deploy_postgres: true
+ocp4_workload_rhoai3x_maas_cnpg_channel: "stable-v1"
+ocp4_workload_rhoai3x_maas_cnpg_catalog: "certified-operators"
+# AllNamespaces install via openshift-operators (reuses the global OperatorGroup,
+# so the operator watches redhat-ods-applications where the Cluster CR lives).
+ocp4_workload_rhoai3x_maas_cnpg_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_cnpg_csv_wait_retries: 30
+ocp4_workload_rhoai3x_maas_cnpg_csv_wait_delay: 20
+ocp4_workload_rhoai3x_maas_pg_namespace: "redhat-ods-applications"
+ocp4_workload_rhoai3x_maas_pg_cluster_name: "maas-postgres"
+ocp4_workload_rhoai3x_maas_pg_instances: 1
+ocp4_workload_rhoai3x_maas_pg_user: "maasadmin"
+# Leave empty to auto-generate (and reuse) a random password; never hardcode a
+# literal here — set a fixed value only via a vaulted extra var if required.
+ocp4_workload_rhoai3x_maas_pg_password: ""
+ocp4_workload_rhoai3x_maas_pg_db: "maasdb"
+ocp4_workload_rhoai3x_maas_pg_storage_size: "5Gi"
+ocp4_workload_rhoai3x_maas_db_sslmode: "require"
+# Service host/port — defaults to the in-cluster cloudnative-pg -rw service.
+# Override both when using an external PG (deploy_postgres=false).
+ocp4_workload_rhoai3x_maas_pg_host: "{{ ocp4_workload_rhoai3x_maas_pg_cluster_name }}-rw.{{ ocp4_workload_rhoai3x_maas_pg_namespace }}.svc.cluster.local"
+ocp4_workload_rhoai3x_maas_pg_port: 5432
+
+# --- Red Hat Connectivity Link (Kuadrant / Authorino / Limitador) ---
+# rhcl-operator is AllNamespaces-only -> installs into openshift-operators (via
+# install_operator). The Kuadrant instance + Authorino/Limitador live in
+# kuadrant-system (matches the MaaS docs and the validated layout).
+ocp4_workload_rhoai3x_maas_rhcl_channel: "stable"
+ocp4_workload_rhoai3x_maas_rhcl_namespace: "openshift-operators"
+ocp4_workload_rhoai3x_maas_kuadrant_namespace: "kuadrant-system"
+ocp4_workload_rhoai3x_maas_rhcl_csv_wait_retries: 30
+ocp4_workload_rhoai3x_maas_rhcl_csv_wait_delay: 20
+
+# --- Gateway API ---
+# Reuse the existing cluster GatewayClass (controller openshift.io/gateway-controller).
+# Set create_gateway_class=true only if you need a dedicated class.
+ocp4_workload_rhoai3x_maas_create_gateway_class: false
+ocp4_workload_rhoai3x_maas_gateway_class_name: "data-science-gateway-class"
+ocp4_workload_rhoai3x_maas_gateway_class_controller: "openshift.io/gateway-controller/v1"
+ocp4_workload_rhoai3x_maas_gateway_name: "maas-default-gateway"
+ocp4_workload_rhoai3x_maas_gateway_namespace: "openshift-ingress"
+# Gateway Service infrastructure (ClusterIP + service-ca serving cert) and the
+# external Route hostname. Leave gateway_host empty to auto-derive
+# maas.<cluster-ingress-domain>.
+ocp4_workload_rhoai3x_maas_gateway_config_name: "maas-gateway-config"
+ocp4_workload_rhoai3x_maas_gateway_tls_secret: "maas-gw-service-tls"
+ocp4_workload_rhoai3x_maas_gateway_host: ""
+
+# --- Authorino TLS (service-ca serving cert) ---
+# Authorino lives in the Kuadrant instance namespace (kuadrant-system). It runs
+# clusterWide, so this namespace is just where its Deployment/Service/CR are.
+ocp4_workload_rhoai3x_maas_authorino_namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+ocp4_workload_rhoai3x_maas_authorino_name: "authorino"
+
+# --- Dashboard feature flags (both Tech Preview, accepted) ---
+ocp4_workload_rhoai3x_maas_vllm_on_maas: true
+ocp4_workload_rhoai3x_maas_observability_dashboard: true
+
+# On teardown, also remove the cloudnative-pg and rhcl operators (Subscription +
+# CSV only; the shared openshift-operators namespace/OperatorGroup are left alone).
+ocp4_workload_rhoai3x_maas_remove_operators: true
+
+# --- MaaS deployment / tenant verification ---
+ocp4_workload_rhoai3x_maas_namespace: "models-as-a-service"
+ocp4_workload_rhoai3x_maas_tenant_wait_retries: 30
+ocp4_workload_rhoai3x_maas_tenant_wait_delay: 20
+
+# --- Sample publish (demo LLMInferenceService + MaaSModelRef + Subscription + AuthPolicy) ---
+# Deploys a small model as a vLLM-on-MaaS LLMInferenceService and governs it with
+# a subscription + auth policy. MaaSModelRef only accepts LLMInferenceService or
+# ExternalModel (not the legacy InferenceService used by model_deployment.yml), and
+# KServe schedules whole GPUs — so this needs a SECOND GPU alongside the base model.
+# Requirement: ocp4_workload_rhoai3x_gpu_node_count >= 2 (asserted at run time).
+ocp4_workload_rhoai3x_maas_publish_sample: true
+
+# Sample model — reuses the base model's oci:// modelcar (proven storage path).
+# NOTE: do NOT use hf:// here — under OpenShift's arbitrary UID the HF downloader
+# fails to place weights (it cannot write its atomic-replace temp file to /mnt,
+# which is owned kserve:kserve 0755). oci:// modelcar copies straight into
+# /mnt/models and avoids this. The LLMInferenceServiceConfig preset already uses
+# the rhaii vLLM image and appends ${VLLM_ADDITIONAL_ARGS} to `vllm serve`.
+ocp4_workload_rhoai3x_maas_sample_isvc_name: "maas-gpt-oss-20b"
+ocp4_workload_rhoai3x_maas_sample_namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+ocp4_workload_rhoai3x_maas_sample_model_uri: "{{ ocp4_workload_rhoai3x_model_storage_uri }}"
+ocp4_workload_rhoai3x_maas_sample_model_name: "{{ ocp4_workload_rhoai3x_model_name }}"
+# vLLM args appended to the preset's `vllm serve` (e.g. gpt-oss reasoning/tool parsers).
+ocp4_workload_rhoai3x_maas_sample_vllm_args: "{{ ocp4_workload_rhoai3x_model_extra_args | join(' ') }}"
+ocp4_workload_rhoai3x_maas_sample_replicas: 1
+ocp4_workload_rhoai3x_maas_sample_gpu_count: "1"
+ocp4_workload_rhoai3x_maas_sample_cpu_requests: "2"
+ocp4_workload_rhoai3x_maas_sample_cpu_limits: "4"
+ocp4_workload_rhoai3x_maas_sample_memory_requests: "8Gi"
+ocp4_workload_rhoai3x_maas_sample_memory_limits: "16Gi"
+ocp4_workload_rhoai3x_maas_sample_isvc_wait_retries: 60
+ocp4_workload_rhoai3x_maas_sample_isvc_wait_delay: 30
+
+# Gen AI asset metadata — required for the model to appear under
+# Gen AI studio -> AI asset endpoints in the dashboard.
+ocp4_workload_rhoai3x_maas_sample_display_name: "gpt-oss-20b (MaaS)"
+ocp4_workload_rhoai3x_maas_sample_description: "gpt-oss-20b published via Models-as-a-Service"
+ocp4_workload_rhoai3x_maas_sample_genai_use_case: "chat"
+
+# Governance objects
+ocp4_workload_rhoai3x_maas_modelref_name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+ocp4_workload_rhoai3x_maas_subscription_name: "rhoai-team"
+ocp4_workload_rhoai3x_maas_authpolicy_name: "rhoai-team-auth"
+ocp4_workload_rhoai3x_maas_subscription_group: "rhoai-users"
+# Members of the subscription group (must exist as OpenShift users to consume MaaS).
+ocp4_workload_rhoai3x_maas_subscription_group_users:
+- admin
+ocp4_workload_rhoai3x_maas_token_limit: 1000000
+# Window units: s/m/h only (no days) — e.g. "24h", not "1d".
+ocp4_workload_rhoai3x_maas_token_window: "1h"
