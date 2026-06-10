@@ -312,7 +312,11 @@
     - {api: v1, kind: PersistentVolumeClaim, name: "{{ _mc }}-data"}
     - {api: v1, kind: Secret, name: "{{ _mc }}-oauth"}
     - {api: v1, kind: Secret, name: "{{ _mc }}-tls"}
-  # The shared key Secret is externally provided, so leave it in place.
+    # per-user key-injecting proxy
+    - {api: apps/v1, kind: Deployment, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}"}
+    - {api: v1, kind: Service, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}"}
+    - {api: v1, kind: ConfigMap, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}-code"}
+  # Externally-provided key Secrets (shared + per-user) are left in place.
 
 - name: Remove AI Safety Guardrails resources
   when:

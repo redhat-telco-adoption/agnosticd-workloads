@@ -51,6 +51,123 @@
              ~ '/' ~ ocp4_workload_rhoai3x_maas_sample_isvc_name ~ '/v1'
       }}
 
+- name: Deploy the per-user key-injecting proxy
+  # OpenWebUI calls this proxy server-side (no CORS); it maps the forwarded
+  # X-OpenWebUI-User-Email to that user's own sk- key and injects it, so each
+  # user's traffic meters under their identity. (OpenWebUI "Direct Connections"
+  # can't be used: they are browser-side and the MaaS gateway has no CORS.)
+  when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  vars:
+    _mcp: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}"
+  block:
+  - name: Assert the per-user keys Secret exists (externally provided)
+    # One entry per user (key=username, value=their sk- key). Each user
+    # self-generates their key in the MaaS UI (impersonation minting is ignored
+    # by maas-api, so keys must be owned by the user themselves).
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+    register: _ocp4_workload_rhoai3x_mc_userkeys
+    failed_when: _ocp4_workload_rhoai3x_mc_userkeys.resources | length == 0
+
+  - name: Create the inject-proxy code ConfigMap
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: "{{ _mcp }}-code"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+          labels:
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        data:
+          proxy.py: "{{ lookup('file', 'maas_inject_proxy.py') }}"
+
+  - name: Deploy the inject-proxy
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: "{{ _mcp }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+          labels:
+            app: "{{ _mcp }}"
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: "{{ _mcp }}"
+          template:
+            metadata:
+              labels:
+                app: "{{ _mcp }}"
+            spec:
+              containers:
+              - name: proxy
+                image: "{{ ocp4_workload_rhoai3x_maas_client_proxy_image }}"
+                command: ["python", "/app/proxy.py"]
+                env:
+                - name: UPSTREAM_BASE_URL
+                  value: "{{ _ocp4_workload_rhoai3x_mc_base_url }}"
+                - name: KEYS_DIR
+                  value: /etc/userkeys
+                - name: PORT
+                  value: "{{ ocp4_workload_rhoai3x_maas_client_proxy_port | string }}"
+                # Fallback key for unauthenticated model listing only (so the
+                # OpenWebUI dropdown populates); inference always needs a user key.
+                - name: DEFAULT_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
+                      key: token
+                ports:
+                - containerPort: "{{ ocp4_workload_rhoai3x_maas_client_proxy_port | int }}"
+                volumeMounts:
+                - name: code
+                  mountPath: /app
+                - name: keys
+                  mountPath: /etc/userkeys
+                  readOnly: true
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 64Mi
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
+              volumes:
+              - name: code
+                configMap:
+                  name: "{{ _mcp }}-code"
+              - name: keys
+                secret:
+                  secretName: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
+
+  - name: Create the inject-proxy Service
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: "{{ _mcp }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+          labels:
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        spec:
+          selector:
+            app: "{{ _mcp }}"
+          ports:
+          - name: http
+            port: "{{ ocp4_workload_rhoai3x_maas_client_proxy_port | int }}"
+            targetPort: "{{ ocp4_workload_rhoai3x_maas_client_proxy_port | int }}"
+
 - name: Create the OpenWebUI ServiceAccount (acts as the OAuth client)
   kubernetes.core.k8s:
     state: present
@@ -204,8 +321,15 @@
                 value: X-Forwarded-Email
               - name: WEBUI_AUTH_TRUSTED_NAME_HEADER
                 value: X-Forwarded-User
+              # Point at the per-user injecting proxy (server-side, no CORS) when
+              # per-user metering is on; otherwise straight at the gateway (shared).
               - name: OPENAI_API_BASE_URL
-                value: "{{ _ocp4_workload_rhoai3x_mc_base_url }}"
+                value: >-
+                  {{ ('http://' ~ ocp4_workload_rhoai3x_maas_client_proxy_name ~ '.'
+                      ~ ocp4_workload_rhoai3x_maas_client_namespace ~ '.svc.cluster.local:'
+                      ~ ocp4_workload_rhoai3x_maas_client_proxy_port | string ~ '/v1')
+                     if ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+                     else _ocp4_workload_rhoai3x_mc_base_url }}
               - name: OPENAI_API_KEY
                 valueFrom:
                   secretKeyRef:
@@ -230,11 +354,10 @@
               # so bypass access control (appropriate for this demo).
               - name: BYPASS_MODEL_ACCESS_CONTROL
                 value: "{{ ocp4_workload_rhoai3x_maas_client_bypass_model_access_control | string | lower }}"
-              # Per-user "Direct Connections" let each user add their OWN MaaS sk-
-              # key as a personal connection, so their chats meter as them — the
-              # per-user metering path (the global key/connection meters as one).
-              - name: ENABLE_DIRECT_CONNECTIONS
-                value: "{{ ocp4_workload_rhoai3x_maas_client_direct_connections | string | lower }}"
+              # Forward the logged-in user's identity (X-OpenWebUI-User-Email) to
+              # the connection so the injecting proxy can pick that user's key.
+              - name: ENABLE_FORWARD_USER_INFO_HEADERS
+                value: "{{ ocp4_workload_rhoai3x_maas_client_per_user_metering | string | lower }}"
               - name: DATA_DIR
                 value: /app/backend/data
               ports:

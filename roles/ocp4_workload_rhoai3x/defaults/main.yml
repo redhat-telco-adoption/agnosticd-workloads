@@ -573,11 +573,23 @@ ocp4_workload_rhoai3x_maas_client_default_user_role: "user"
 # Show the shared MaaS model to every user (base connection models are otherwise
 # admin-only). Set false to gate models per user/group via the Admin Panel.
 ocp4_workload_rhoai3x_maas_client_bypass_model_access_control: true
-# Allow each user to add their OWN MaaS sk- key as a personal "Direct Connection"
-# — the per-user-metering path (each user's traffic meters under their identity,
-# vs the single shared connection which meters as one). Pairs with
-# maas_telemetry_capture_user: true so the Usage dashboard splits rows per user.
-ocp4_workload_rhoai3x_maas_client_direct_connections: true
+# Per-user metering via a backend key-injecting proxy (NOT OpenWebUI "Direct
+# Connections" — those are browser-side and the MaaS gateway has no CORS, so they
+# are unusable here). OpenWebUI calls the proxy server-side with
+# ENABLE_FORWARD_USER_INFO_HEADERS=true (forwards X-OpenWebUI-User-Email); the
+# proxy maps the user to their OWN sk- key and injects it, so each user's traffic
+# meters under their identity. Pairs with maas_telemetry_capture_user: true.
+ocp4_workload_rhoai3x_maas_client_per_user_metering: true
+ocp4_workload_rhoai3x_maas_client_proxy_name: "maas-inject-proxy"
+# Stock UBI python image — the proxy is a dependency-free stdlib script mounted
+# from a ConfigMap (no image build).
+ocp4_workload_rhoai3x_maas_client_proxy_image: "registry.access.redhat.com/ubi9/python-311:latest"
+ocp4_workload_rhoai3x_maas_client_proxy_port: 8000
+# Secret holding one entry per user (key=username, value=their sk- key). Like the
+# shared key, EXTERNALLY PROVIDED — each user self-generates their key in the MaaS
+# UI (the only way; impersonation minting is ignored by maas-api). The proxy reads
+# these; the shared key (maas_client_key_secret) is the fallback for model listing.
+ocp4_workload_rhoai3x_maas_client_userkeys_secret: "maas-userkeys"
 
 # MaaS gateway URL the client points at. Empty => the task builds the EXTERNAL
 # gateway URL from the cluster ingress domain (https://maas.<domain>/<ns>/<isvc>/v1).
