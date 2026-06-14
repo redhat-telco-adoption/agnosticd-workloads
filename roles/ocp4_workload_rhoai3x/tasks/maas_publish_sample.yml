@@ -23,6 +23,13 @@
   # advertisement (and the nvidia.com/gpu.present label) land minutes after the
   # node goes Ready. Poll until both GPUs are allocatable rather than failing on
   # the gap — otherwise a first run fails here while the node is still coming up.
+  #
+  # NOTE: the allocatable key is the literal string "nvidia.com/gpu". It must be
+  # read with dict2items + selectattr, NOT map(attribute='nvidia.com/gpu'):
+  # Jinja's `attribute` treats dots as a nested path (nvidia -> com/gpu), which
+  # never matches the flat key, so that form always yields 0 and the gate can
+  # never pass. dict2items turns each allocatable map into key/value pairs we can
+  # match exactly; nodes still coming up (no allocatable yet) contribute nothing.
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Node
@@ -33,20 +40,20 @@
   delay: "{{ ocp4_workload_rhoai3x_gpu_node_ready_delay }}"
   until: >-
     _ocp4_workload_rhoai3x_maas_gpu_nodes.resources
-    | map(attribute='status.allocatable')
-    | map('default', {}, true)
-    | map(attribute='nvidia.com/gpu', default='0')
-    | map('int') | sum >= 2
+    | map(attribute='status.allocatable') | map('default', {}, true)
+    | map('dict2items') | flatten
+    | selectattr('key', 'equalto', 'nvidia.com/gpu')
+    | map(attribute='value') | map('int') | sum >= 2
 
 - name: Require at least two allocatable GPUs (base model + MaaS sample)
   ansible.builtin.assert:
     that:
     - >-
       _ocp4_workload_rhoai3x_maas_gpu_nodes.resources
-      | map(attribute='status.allocatable')
-      | map('default', {}, true)
-      | map(attribute='nvidia.com/gpu', default='0')
-      | map('int') | sum >= 2
+      | map(attribute='status.allocatable') | map('default', {}, true)
+      | map('dict2items') | flatten
+      | selectattr('key', 'equalto', 'nvidia.com/gpu')
+      | map(attribute='value') | map('int') | sum >= 2
     fail_msg: >-
       The MaaS sample publish needs a second GPU (one for the base model, one
       for the published model). Set ocp4_workload_rhoai3x_gpu_node_count >= 2.
