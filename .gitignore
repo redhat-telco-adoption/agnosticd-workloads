@@ -4,3 +4,9 @@
 .workshop-qa/
 .claude
 .omc/
+.ansible/
+
+# Local scratch / working files
+notes.md
+err.log
+*.log
