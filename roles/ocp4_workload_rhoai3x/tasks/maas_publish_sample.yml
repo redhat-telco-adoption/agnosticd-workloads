@@ -18,13 +18,25 @@
         name: "{{ ocp4_workload_rhoai3x_maas_subscription_group }}"
       users: "{{ ocp4_workload_rhoai3x_maas_subscription_group_users }}"
 
-- name: Gather GPU capacity for the sample model
+- name: Wait for at least two allocatable GPUs (base model + MaaS sample)
+  # The second GPU node lags the first: its NVIDIA driver install + device-plugin
+  # advertisement (and the nvidia.com/gpu.present label) land minutes after the
+  # node goes Ready. Poll until both GPUs are allocatable rather than failing on
+  # the gap — otherwise a first run fails here while the node is still coming up.
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Node
     label_selectors:
     - "nvidia.com/gpu.present=true"
   register: _ocp4_workload_rhoai3x_maas_gpu_nodes
+  retries: "{{ ocp4_workload_rhoai3x_gpu_node_ready_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_gpu_node_ready_delay }}"
+  until: >-
+    _ocp4_workload_rhoai3x_maas_gpu_nodes.resources
+    | map(attribute='status.allocatable')
+    | map('default', {}, true)
+    | map(attribute='nvidia.com/gpu', default='0')
+    | map('int') | sum >= 2
 
 - name: Require at least two allocatable GPUs (base model + MaaS sample)
   ansible.builtin.assert:
