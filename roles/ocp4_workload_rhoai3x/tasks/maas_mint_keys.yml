@@ -84,6 +84,19 @@
                | map('regex_replace', '^(.*)$',
                      ocp4_workload_rhoai3x_maas_client_mint_user_prefix ~ '\1') | list) }}
 
+# Expected per-user key owners = the userN loop accounts PLUS admin (when
+# mint_include_admin). The userN loop is minted with the shared user password;
+# admin is minted separately with the admin token (below). This combined list
+# drives idempotency only — so a re-run that is missing just the admin key still
+# triggers minting instead of skipping.
+- name: Build the expected per-user owner list (loop users + admin)
+  when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_expected_users: >-
+      {{ _ocp4_workload_rhoai3x_mint_users
+         + ([ocp4_workload_rhoai3x_maas_client_mint_admin_user]
+            if (ocp4_workload_rhoai3x_maas_client_mint_include_admin | bool) else []) }}
+
 - name: Read the existing per-user keys Secret (idempotency pre-check)
   when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
   kubernetes.core.k8s_info:
@@ -107,7 +120,7 @@
     _ocp4_workload_rhoai3x_mint_need_any: >-
       {{ (_ocp4_workload_rhoai3x_mint_existing_shared.resources | length == 0)
          or (ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
-             and ((_ocp4_workload_rhoai3x_mint_users | default([]))
+             and ((_ocp4_workload_rhoai3x_mint_expected_users | default([]))
                   | difference(_ocp4_workload_rhoai3x_mint_existing_keys | default([]))
                   | length > 0)) }}
 
@@ -271,6 +284,45 @@
     loop_control:
       loop_var: _ocp4_workload_rhoai3x_mint_user
     when: _ocp4_workload_rhoai3x_mint_user not in _ocp4_workload_rhoai3x_mint_existing_keys
+
+  # Admin per-user key — minted with the admin token already obtained for the
+  # shared key (admin has its own password, so it cannot ride the userN loop which
+  # uses one shared user password). The OpenWebUI oauth-proxy forwards the admin
+  # login as '<admin>@cluster.local'; the inject-proxy maps that to userkey file
+  # '<admin>', so without this entry admin gets a 403. Idempotent: skip when admin
+  # already has a key.
+  - name: Mint the admin per-user MaaS key (for OpenWebUI admin login)
+    when:
+    - ocp4_workload_rhoai3x_maas_client_mint_include_admin | bool
+    - ocp4_workload_rhoai3x_maas_client_mint_admin_user not in _ocp4_workload_rhoai3x_mint_existing_keys
+    block:
+    - name: Mint the admin MaaS API key via the maas-api (admin token)
+      ansible.builtin.uri:
+        url: "{{ _ocp4_workload_rhoai3x_mint_maas_base }}/maas-api/v1/api-keys"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ _ocp4_workload_rhoai3x_mint_admin_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-{{ ocp4_workload_rhoai3x_maas_client_mint_admin_user }}"
+          subscription: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+          expiresInDays: "{{ ocp4_workload_rhoai3x_maas_client_mint_expiry_days | int }}"
+        status_code: [200, 201]
+      register: _ocp4_workload_rhoai3x_mint_admin_key_resp
+      retries: "{{ ocp4_workload_rhoai3x_maas_client_mint_retries }}"
+      delay: "{{ ocp4_workload_rhoai3x_maas_client_mint_retry_delay }}"
+      until: _ocp4_workload_rhoai3x_mint_admin_key_resp.status in [200, 201]
+      no_log: true
+
+    - name: Accumulate the admin key into the new-keys map
+      ansible.builtin.set_fact:
+        _ocp4_workload_rhoai3x_mint_new_keys: >-
+          {{ (_ocp4_workload_rhoai3x_mint_new_keys | default({}))
+             | combine({ocp4_workload_rhoai3x_maas_client_mint_admin_user:
+                        _ocp4_workload_rhoai3x_mint_admin_key_resp.json.key}) }}
+      no_log: true
 
   - name: Assemble the existing username -> sk- map (decoded from Secret data)
     # Secret .data values are base64; decode them back to sk- so the rewritten

@@ -667,6 +667,13 @@ ocp4_workload_rhoai3x_maas_client_mint_user_password: "{{ ocp4_workload_authenti
 # Explicit user list. When non-empty it OVERRIDES the userN generation above
 # (e.g. ["alice", "bob"]); each must be a real, challenge-capable identity.
 ocp4_workload_rhoai3x_maas_client_mint_users: []
+# Also mint a per-user key for the admin identity, so logging into the OpenWebUI
+# client as the cluster admin (forwarded by oauth-proxy as <admin>@cluster.local)
+# resolves to a key instead of a 403. Admin is already a subscription-group member
+# (it mints the shared key), so its key is inference-authorized. Unlike the userN
+# accounts (one shared password), admin has its own password, so this key is minted
+# with the admin token already obtained for the shared key — not via the user loop.
+ocp4_workload_rhoai3x_maas_client_mint_include_admin: true
 
 # Readiness gate: poll the maas-api with the admin token until the gateway auth
 # chain authenticates it (200) before minting. Right after this same run
