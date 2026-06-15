@@ -42,6 +42,12 @@
   vars:
     install_operator_action: install
     install_operator_name: opentelemetry-product
+    # The package is "opentelemetry-product" but its CSV is "opentelemetry-operator.vX".
+    # install_operator's InstallPlan wait filters by CSV-name-contains <csv_nameprefix>,
+    # which DEFAULTS to install_operator_name — that never matches the CSV here, so the
+    # "Wait until InstallPlan is created" step loops forever. Pin the prefix to the real
+    # CSV name. (COO doesn't need this: its package and CSV share a prefix.)
+    install_operator_csv_nameprefix: opentelemetry-operator
     install_operator_namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
     install_operator_channel: "{{ ocp4_workload_rhoai3x_maas_otel_channel }}"
     install_operator_catalog: redhat-operators
