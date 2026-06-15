@@ -645,3 +645,14 @@ ocp4_workload_rhoai3x_maas_client_mint_user_password: "{{ ocp4_workload_authenti
 # Explicit user list. When non-empty it OVERRIDES the userN generation above
 # (e.g. ["alice", "bob"]); each must be a real, challenge-capable identity.
 ocp4_workload_rhoai3x_maas_client_mint_users: []
+
+# Readiness gate: poll the maas-api with the admin token until the gateway auth
+# chain authenticates it (200) before minting. Right after this same run
+# re-applies the MaaS platform, the auth chain (gateway/Authorino/maas-api) can
+# be mid-reconcile and 500 every call for a few minutes. 30x10s = ~5 min.
+ocp4_workload_rhoai3x_maas_client_mint_api_wait_retries: 30
+ocp4_workload_rhoai3x_maas_client_mint_api_wait_delay: 10
+# Per-mint retry margin on top of the readiness gate (rides out a brief 5xx; a
+# 5xx fails before a key is created, so retries do not mint duplicates).
+ocp4_workload_rhoai3x_maas_client_mint_retries: 6
+ocp4_workload_rhoai3x_maas_client_mint_retry_delay: 10

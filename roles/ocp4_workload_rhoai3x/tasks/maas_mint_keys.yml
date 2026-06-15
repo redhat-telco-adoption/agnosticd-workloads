@@ -113,6 +113,29 @@
   when: _ocp4_workload_rhoai3x_mint_admin_token | length > 0
 
 # ---------------------------------------------------------------------------
+# Readiness gate: the maas-api auth chain (gateway -> Authorino -> maas-api) can
+# be mid-reconcile right after this same run re-applied the MaaS platform — in
+# that window EVERY maas-api call 500s ("AUTH_FAILURE: Exception thrown while
+# generating token" / maas-api logs "Missing or empty username header"). Minting
+# into that window fails the run. Poll a read-only endpoint with the admin token
+# until the gateway authenticates it (200) before minting anything.
+# ---------------------------------------------------------------------------
+- name: Wait for the maas-api auth chain to be ready
+  when: automint_effective | bool
+  ansible.builtin.uri:
+    url: "{{ _ocp4_workload_rhoai3x_mint_maas_base }}/maas-api/v1/models"
+    method: GET
+    validate_certs: false
+    headers:
+      Authorization: "Bearer {{ _ocp4_workload_rhoai3x_mint_admin_token }}"
+    status_code: [200]
+  register: _ocp4_workload_rhoai3x_mint_api_ready
+  retries: "{{ ocp4_workload_rhoai3x_maas_client_mint_api_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_client_mint_api_wait_delay }}"
+  until: _ocp4_workload_rhoai3x_mint_api_ready.status == 200
+  no_log: true
+
+# ---------------------------------------------------------------------------
 # SHARED key — minted by the admin (a real group member). Idempotent: skip when
 # the Secret already exists.
 # ---------------------------------------------------------------------------
@@ -136,6 +159,13 @@
         expiresInDays: "{{ ocp4_workload_rhoai3x_maas_client_mint_expiry_days | int }}"
       status_code: [200, 201]
     register: _ocp4_workload_rhoai3x_mint_shared_resp
+    # Ride out a brief maas-api 5xx (auth chain still settling). A 5xx fails
+    # before a key is created, so retrying does not mint duplicates; once a 2xx
+    # lands, the until stops. The readiness gate above already covers the common
+    # case — this just adds margin.
+    retries: "{{ ocp4_workload_rhoai3x_maas_client_mint_retries }}"
+    delay: "{{ ocp4_workload_rhoai3x_maas_client_mint_retry_delay }}"
+    until: _ocp4_workload_rhoai3x_mint_shared_resp.status in [200, 201]
     no_log: true
 
   - name: Store the shared MaaS key in a Secret

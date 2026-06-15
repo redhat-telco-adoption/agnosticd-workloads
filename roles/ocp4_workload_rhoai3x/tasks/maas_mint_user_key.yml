@@ -50,6 +50,11 @@
       expiresInDays: "{{ ocp4_workload_rhoai3x_maas_client_mint_expiry_days | int }}"
     status_code: [200, 201]
   register: _ocp4_workload_rhoai3x_mint_user_resp
+  # Ride out a brief maas-api 5xx (auth chain still settling); a 5xx fails before
+  # a key is created, so retrying does not mint duplicates.
+  retries: "{{ ocp4_workload_rhoai3x_maas_client_mint_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_client_mint_retry_delay }}"
+  until: _ocp4_workload_rhoai3x_mint_user_resp.status in [200, 201]
   no_log: true
 
 - name: "Accumulate the minted key for user {{ _ocp4_workload_rhoai3x_mint_user }}"
