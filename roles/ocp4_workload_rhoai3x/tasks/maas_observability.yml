@@ -29,8 +29,11 @@
     install_operator_namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
     install_operator_channel: "{{ ocp4_workload_rhoai3x_maas_coo_channel }}"
     install_operator_catalog: redhat-operators
-    install_operator_automatic_install_plan_approval: true
-    install_operator_starting_csv: ""
+    # When a starting CSV is pinned, approval MUST be Manual so OLM cannot auto-
+    # upgrade past it (COO 1.5.0's perses-operator v0.4.0 injects --web.tls-min-version
+    # which RHOAI 3.4's pinned Perses v0.51.1 rejects -> Perses CrashLoopBackOff).
+    install_operator_automatic_install_plan_approval: "{{ ocp4_workload_rhoai3x_maas_coo_starting_csv == '' }}"
+    install_operator_starting_csv: "{{ ocp4_workload_rhoai3x_maas_coo_starting_csv }}"
 
 # REQUIRED second operator: without the OpenTelemetryCollector operator the RHOAI
 # platform Monitoring CR (default-monitoring) blocks with "OpenTelemetryCollector
