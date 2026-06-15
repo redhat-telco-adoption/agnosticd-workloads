@@ -34,17 +34,22 @@
   when: ocp4_workload_rhoai3x_model_deploy | bool
   ansible.builtin.include_tasks: model_deployment.yml
 
-- name: Configure Gen AI Playground (LlamaStackDistribution)
-  when:
-  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
-  - ocp4_workload_rhoai3x_model_deploy | bool
-  ansible.builtin.include_tasks: gen_ai_playground.yml
-
+# Guardrails MUST precede the playground: it creates the SA token Secret
+# (api-token-secret) and the NeMo service URL that the playground's
+# LlamaStackDistribution references when playground_guardrails_model is true.
+# If the playground runs first, its pod hits CreateContainerConfigError on the
+# missing secret and the in-task "Wait for LSD Ready" deadlocks.
 - name: Configure AI Safety Guardrails (NeMo Guardrails)
   when:
   - ocp4_workload_rhoai3x_guardrails_enable | bool
   - ocp4_workload_rhoai3x_model_deploy | bool
   ansible.builtin.include_tasks: guardrails.yml
+
+- name: Configure Gen AI Playground (LlamaStackDistribution)
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  ansible.builtin.include_tasks: gen_ai_playground.yml
 
 # --- Models-as-a-Service (optional, RHOAI 3.4+) ---------------------------
 # Prerequisites first (UWM, PostgreSQL, db secret, Connectivity Link, Gateway,
