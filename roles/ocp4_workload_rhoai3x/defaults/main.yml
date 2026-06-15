@@ -566,6 +566,17 @@ ocp4_workload_rhoai3x_maas_monitoring_wait_delay: 15
 ocp4_workload_rhoai3x_maas_usage_datasource_wait_retries: 60
 ocp4_workload_rhoai3x_maas_usage_datasource_wait_delay: 20
 
+# Master switch for MaaS Tenant telemetry (per-subscription/model usage metrics).
+# DEFAULT OFF: enabling it makes maas-controller install a gateway-wide
+# payload-processing ext_proc filter that breaks X-MaaS-Username delivery on the
+# maas-api MANAGEMENT route — the "Gen AI studio -> API keys" and "Observe &
+# monitor -> Dashboard" pages then return 500 (RHOAIENG-69086, fix target 3.5;
+# see the observability_deploy note above). The rest of the observability backend
+# (COO + OTel + monitoring stack) still deploys when observability_deploy is true;
+# only the Tenant usage-metering telemetry is withheld. Re-enable once the upstream
+# fix lands. The capture flags below only take effect when this is true.
+ocp4_workload_rhoai3x_maas_telemetry_enabled: false
+
 # Tenant telemetry capture flags. captureUser/Group default off (privacy +
 # Prometheus cardinality); enable captureUser for the per-user token table.
 ocp4_workload_rhoai3x_maas_telemetry_capture_organization: true
@@ -667,6 +678,13 @@ ocp4_workload_rhoai3x_maas_client_mint_user_password: "{{ ocp4_workload_authenti
 # Explicit user list. When non-empty it OVERRIDES the userN generation above
 # (e.g. ["alice", "bob"]); each must be a real, challenge-capable identity.
 ocp4_workload_rhoai3x_maas_client_mint_users: []
+# Also mint a per-user key for the admin identity, so logging into the OpenWebUI
+# client as the cluster admin (forwarded by oauth-proxy as <admin>@cluster.local)
+# resolves to a key instead of a 403. Admin is already a subscription-group member
+# (it mints the shared key), so its key is inference-authorized. Unlike the userN
+# accounts (one shared password), admin has its own password, so this key is minted
+# with the admin token already obtained for the shared key — not via the user loop.
+ocp4_workload_rhoai3x_maas_client_mint_include_admin: true
 
 # Readiness gate: poll the maas-api with the admin token until the gateway auth
 # chain authenticates it (200) before minting. Right after this same run

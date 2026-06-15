@@ -157,7 +157,7 @@
   delay: 10
   until: _ocp4_workload_rhoai3x_maas_limitador_pm.resources | length == 1
 
-- name: Enable MaaS Tenant telemetry
+- name: Configure MaaS Tenant telemetry (default off — see maas_telemetry_enabled)
   kubernetes.core.k8s:
     state: patched
     api_version: maas.opendatahub.io/v1alpha1
@@ -167,7 +167,7 @@
     definition:
       spec:
         telemetry:
-          enabled: true
+          enabled: "{{ ocp4_workload_rhoai3x_maas_telemetry_enabled | bool }}"
           metrics:
             captureOrganization: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_organization | bool }}"
             captureUser: "{{ ocp4_workload_rhoai3x_maas_telemetry_capture_user | bool }}"
@@ -183,6 +183,7 @@
 # (only the dashboard Usage tab depends on it — until Available it shows
 # "No datasource found"), and must not fail an otherwise-complete provision.
 - name: Wait for the MaaS Usage observability datasource to be reconciled
+  when: ocp4_workload_rhoai3x_maas_telemetry_enabled | bool
   kubernetes.core.k8s_info:
     api_version: perses.dev/v1alpha2
     kind: PersesDatasource
@@ -200,6 +201,7 @@
   failed_when: false
 
 - name: Report the Usage observability datasource status (non-fatal)
+  when: ocp4_workload_rhoai3x_maas_telemetry_enabled | bool
   vars:
     _ds_available: >-
       {{ (_ocp4_workload_rhoai3x_maas_usage_ds.resources | default([])
