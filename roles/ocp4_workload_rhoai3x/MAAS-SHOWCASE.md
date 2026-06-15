@@ -121,15 +121,58 @@ higher `priority`) for a different group to show tiered access.
 
 ## 4. Tracking usage
 
-**a) Observability dashboard (Tech Preview)** — enabled by
-`ocp4_workload_rhoai3x_maas_observability_dashboard: true`:
-- **Observe & monitor → Dashboard → Usage tab**.
+**a) Observability dashboard (Tech Preview)** — requires the observability
+**backend** (Option B), enabled by `ocp4_workload_rhoai3x_maas_observability_deploy: true`.
+This both deploys the backend (**Cluster Observability Operator** *and* the
+**Red Hat build of OpenTelemetry** operator + the RHOAI monitoring stack in
+`redhat-ods-monitoring` + Kuadrant observability + Tenant telemetry) and turns on
+the `observabilityDashboard` UI flag. Both operators are required — without the
+OpenTelemetry operator the RHOAI `default-monitoring` CR blocks on
+`OpenTelemetryCollector operator must be installed` and no Thanos/Prometheus deploys. **Do not** set the UI flag without
+the backend — that produces the "Service Unavailable" page (the deploy flag now
+gates the UI flag for exactly this reason).
+
+- **Observe & monitor → Dashboard → Usage tab** (admin-only; rendered with Perses,
+  queries Thanos Querier).
 - Overview: **Total Tokens, Total Requests, Total Errors, Success Rate, Active Users**.
 - **Token Consumption by User** table: per User / Subscription / Model — Tokens,
   Requests, and **Rate Limited** (429) counts. Filter by user/subscription/model
   and time range (5m … 14d).
-- Per-user attribution requires `captureUser: true` in the Tenant telemetry /
-  auth policy (it is `false` by default for privacy).
+- Per-user attribution requires `ocp4_workload_rhoai3x_maas_telemetry_capture_user: true`
+  (it is `false` by default — privacy + Prometheus cardinality).
+- Metrics only appear **after** models are accessed; an empty dashboard before any
+  inference is expected. It is **showback, not billing-grade** — for precise
+  chargeback read the Limitador metrics endpoint directly.
+- **Driving usage (NOT from the dashboard Playground):** the dashboard Gen AI
+  Playground cannot drive MaaS metering. It injects the logged-in user's
+  OpenShift token into every LlamaStack `remote::vllm` provider (via the
+  `x-llamastack-provider-data` header), which overrides any configured api_token.
+  The MaaS gateway rejects OpenShift tokens (only `sk-oai-` keys authenticate), so
+  a MaaS provider in the Playground always returns **401 / blank**. That is why
+  the Playground dropdown intentionally offers only **direct** and
+  **Guardrails-filtered** entries (`ocp4_workload_rhoai3x_playground_maas_model`
+  is `false`). To drive the Usage dashboard, generate traffic through a client
+  that sends an **sk- key** directly: the model's own **"Generate API key → Try in
+  playground"** flow, or any OpenAI-compatible client / the CLI in §2. (Enabling a
+  Playground MaaS entry would require an auth-injecting proxy in front of the
+  gateway to swap the user token for an sk- key.)
+
+> Heavy, cluster-wide change. COO may be shared with `coo_incident_detection`;
+> teardown leaves COO intact unless `..._maas_observability_remove_coo: true`.
+
+> **Known residual (RHOAI 3.4 MaaS tech-preview defect).** Enabling Tenant
+> telemetry reconfigures the MaaS gateway (a gateway-wide `payload-processing`
+> `ext_proc` filter) and breaks the `X-MaaS-Username` header on the maas-api
+> **management** route. After observability is on, `GET`/`POST /maas-api/v1/*`
+> and the dashboard **Gen AI studio → API keys** page return **500**. **Model
+> inference and already-minted keys are unaffected** — the OpenWebUI client uses
+> the stored key Secrets, not the live management API. The role works around this
+> by minting all keys *before* deploying the observability backend
+> (`tasks/workload.yml`), and the key-mint task is a no-op on re-runs (it skips the
+> management route entirely when the key Secrets already exist), so the
+> degradation never blocks a provision or a re-run. The telemetry reconfig is
+> continuously re-asserted by a maas-controller reconcile (~every 5 min); it
+> cannot be reverted by a restart while telemetry stays enabled. File upstream.
 
 **b) Prometheus metrics (User Workload Monitoring)** — scraped from
 Limitador/Authorino/gateway. Query in **Observe → Metrics**:

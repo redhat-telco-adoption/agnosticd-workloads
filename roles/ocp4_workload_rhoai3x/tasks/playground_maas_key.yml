@@ -1,0 +1,133 @@
+---
+# ---------------------------------------------------------------------------
+# Mint a MaaS API key for the Gen AI Playground's MaaS provider.
+#
+# The MaaS gateway only accepts sk- API keys (not raw OpenShift tokens). To get
+# one unattended, a dedicated ServiceAccount is added as a NARROW owner.user of
+# the subscription (least privilege — just this SA, not a group), then its token
+# authenticates a maas-api call that mints the key. The key is stored in a Secret
+# and injected into the LlamaStackDistribution via valueFrom (never hardcoded).
+#
+# Idempotent: if the key Secret already exists we skip minting, so re-runs don't
+# accumulate keys on the subscription.
+# ---------------------------------------------------------------------------
+
+- name: Check for an existing Playground MaaS key Secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_playground_maas_key_secret }}"
+    namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+  register: _ocp4_workload_rhoai3x_pg_key
+
+- name: Provision and mint the Playground MaaS key
+  when: _ocp4_workload_rhoai3x_pg_key.resources | length == 0
+  block:
+  - name: Create the Playground MaaS minter ServiceAccount
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}"
+          namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+
+  - name: Add the minter SA as a narrow owner.user of the MaaS subscription
+    # Merge patch keeps the existing owner.groups; sets owner.users to just this SA.
+    kubernetes.core.k8s:
+      state: patched
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      definition:
+        spec:
+          owner:
+            users:
+            - "system:serviceaccount:{{ ocp4_workload_rhoai3x_model_namespace }}:{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}"
+
+  - name: Create a token Secret for the minter SA
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}-token"
+          namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+          annotations:
+            kubernetes.io/service-account.name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}"
+        type: kubernetes.io/service-account-token
+
+  - name: Wait for the minter token to be populated
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}-token"
+      namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+    register: _ocp4_workload_rhoai3x_pg_minter_tok
+    retries: 12
+    delay: 5
+    until:
+    - _ocp4_workload_rhoai3x_pg_minter_tok.resources | length == 1
+    - _ocp4_workload_rhoai3x_pg_minter_tok.resources[0].data.token is defined
+
+  - name: Get the cluster ingress domain (for the maas-api host)
+    kubernetes.core.k8s_info:
+      api_version: config.openshift.io/v1
+      kind: Ingress
+      name: cluster
+    register: _ocp4_workload_rhoai3x_pg_ingress
+
+  - name: Mint the MaaS API key via the maas-api
+    ansible.builtin.uri:
+      url: "https://maas.{{ _ocp4_workload_rhoai3x_pg_ingress.resources[0].spec.domain }}/maas-api/v1/api-keys"
+      method: POST
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ _ocp4_workload_rhoai3x_pg_minter_tok.resources[0].data.token | b64decode }}"
+        Content-Type: application/json
+      body_format: json
+      body:
+        name: "{{ ocp4_workload_rhoai3x_playground_maas_key_name }}"
+        subscription: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+        expiresInDays: "{{ ocp4_workload_rhoai3x_playground_maas_key_expiry_days | int }}"
+      status_code: [200, 201]
+    register: _ocp4_workload_rhoai3x_pg_key_resp
+    no_log: true
+
+  - name: Store the MaaS API key in a Secret
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: "{{ ocp4_workload_rhoai3x_playground_maas_key_secret }}"
+          namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+          labels:
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        stringData:
+          token: "{{ _ocp4_workload_rhoai3x_pg_key_resp.json.key }}"
+    no_log: true
+
+  - name: Wait for the gateway to accept the freshly minted key
+    # A newly minted sk- key is not usable the instant maas-api returns it: the
+    # backing apikey Secret must reconcile into Authorino's cache before the
+    # gateway authorizes it. Until then inference returns 401. Without this gate
+    # the playbook finishes (and the Playground starts) while auth is still cold,
+    # so the MaaS model "immediately comes back with no response" for a few
+    # minutes. Poll the gateway with the key until it authorizes (200).
+    ansible.builtin.uri:
+      url: "{{ ocp4_workload_rhoai3x_playground_maas_base_url }}/models"
+      method: GET
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ _ocp4_workload_rhoai3x_pg_key_resp.json.key }}"
+      status_code: [200]
+    register: _ocp4_workload_rhoai3x_pg_key_ready
+    retries: 24
+    delay: 5
+    until: _ocp4_workload_rhoai3x_pg_key_ready.status == 200
+    no_log: true

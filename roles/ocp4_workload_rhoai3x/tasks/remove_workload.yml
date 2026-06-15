@@ -3,6 +3,117 @@
 # Deprovision — reverse order of workload.yml
 # ---------------------------------------------------------------------------
 
+# -2. MaaS Observability backend (Option B) — revert before the MaaS resources
+#     below, while the Tenant and Kuadrant CRs still exist to patch. COO and the
+#     DSCInitialization monitoring config are cluster-wide and may be shared, so
+#     they are only touched when maas_observability_remove_coo is true.
+- name: Revert MaaS Observability backend
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_observability_deploy | bool
+  block:
+  - name: Disable MaaS Tenant telemetry
+    kubernetes.core.k8s:
+      state: patched
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: Tenant
+      name: default-tenant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      definition:
+        spec:
+          telemetry:
+            enabled: false
+    failed_when: false
+
+  - name: Disable Kuadrant observability
+    kubernetes.core.k8s:
+      state: patched
+      api_version: kuadrant.io/v1beta1
+      kind: Kuadrant
+      name: kuadrant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_kuadrant_namespace }}"
+      definition:
+        spec:
+          observability:
+            enable: false
+    failed_when: false
+
+  - name: Revert DSCInitialization monitoring and remove COO (only if owned here)
+    when: ocp4_workload_rhoai3x_maas_observability_remove_coo | bool
+    block:
+    - name: Discover the DSCInitialization resource
+      kubernetes.core.k8s_info:
+        api_version: dscinitialization.opendatahub.io/v2
+        kind: DSCInitialization
+      register: _ocp4_workload_rhoai3x_maas_dsci_rm
+
+    - name: Set DSCInitialization monitoring back to Removed
+      kubernetes.core.k8s:
+        state: patched
+        api_version: dscinitialization.opendatahub.io/v2
+        kind: DSCInitialization
+        name: "{{ _ocp4_workload_rhoai3x_maas_dsci_rm.resources[0].metadata.name }}"
+        definition:
+          spec:
+            monitoring:
+              managementState: Removed
+      failed_when: false
+      when: _ocp4_workload_rhoai3x_maas_dsci_rm.resources | length > 0
+
+    - name: Remove the Cluster Observability Operator Subscription
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: cluster-observability-operator
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+
+    - name: List ClusterServiceVersions in the COO namespace
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+      register: _ocp4_workload_rhoai3x_maas_coo_csvs
+
+    - name: Remove the Cluster Observability Operator ClusterServiceVersion(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_coo_namespace }}"
+      loop: "{{ _ocp4_workload_rhoai3x_maas_coo_csvs.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.metadata.name is search('observability-operator')
+
+    - name: Remove the OpenTelemetry operator Subscription
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: opentelemetry-product
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+
+    - name: List ClusterServiceVersions in the OpenTelemetry operator namespace
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+      register: _ocp4_workload_rhoai3x_maas_otel_csvs
+
+    - name: Remove the OpenTelemetry operator ClusterServiceVersion(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_maas_otel_namespace }}"
+      loop: "{{ _ocp4_workload_rhoai3x_maas_otel_csvs.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.metadata.name is search('opentelemetry-operator')
+
 # -1. Models-as-a-Service (optional feature; provisioned last, so removed first).
 #     Note: User Workload Monitoring is left enabled on purpose — it is a
 #     cluster-wide setting other workloads may depend on. The DSC and the
@@ -175,6 +286,115 @@
       when: >-
         item.metadata.name is search('rhcl-operator')
         or item.metadata.name is search('cloudnative-pg')
+
+# 0a. AI Safety Guardrails (NeMo Guardrails) — remove before the model it guards.
+# The trustyai DSC component is reverted when the DataScienceCluster is deleted
+# later in this playbook, so only the namespaced objects are removed here.
+- name: Remove the MaaS client (OpenWebUI)
+  when:
+  - ocp4_workload_rhoai3x_maas_client_deploy | bool
+  vars:
+    _mc: "{{ ocp4_workload_rhoai3x_maas_client_name }}"
+    _ns: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  block:
+  - name: Remove OpenWebUI Route, Deployment, Service, SA, PVC, secrets
+    kubernetes.core.k8s:
+      state: absent
+      api_version: "{{ item.api }}"
+      kind: "{{ item.kind }}"
+      name: "{{ item.name }}"
+      namespace: "{{ _ns }}"
+    loop:
+    - {api: route.openshift.io/v1, kind: Route, name: "{{ _mc }}"}
+    - {api: apps/v1, kind: Deployment, name: "{{ _mc }}"}
+    - {api: v1, kind: Service, name: "{{ _mc }}"}
+    - {api: v1, kind: ServiceAccount, name: "{{ _mc }}"}
+    - {api: v1, kind: PersistentVolumeClaim, name: "{{ _mc }}-data"}
+    - {api: v1, kind: Secret, name: "{{ _mc }}-oauth"}
+    - {api: v1, kind: Secret, name: "{{ _mc }}-tls"}
+    # per-user key-injecting proxy
+    - {api: apps/v1, kind: Deployment, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}"}
+    - {api: v1, kind: Service, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}"}
+    - {api: v1, kind: ConfigMap, name: "{{ ocp4_workload_rhoai3x_maas_client_proxy_name }}-code"}
+  # Externally-provided key Secrets (shared + per-user) are left in place.
+
+- name: Remove AI Safety Guardrails resources
+  when:
+  - ocp4_workload_rhoai3x_guardrails_enable | bool
+  - ocp4_workload_rhoai3x_model_deploy | bool
+  block:
+  - name: Remove NemoGuardrails resource
+    kubernetes.core.k8s:
+      state: absent
+      api_version: trustyai.opendatahub.io/v1alpha1
+      kind: NemoGuardrails
+      name: "{{ ocp4_workload_rhoai3x_guardrails_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails ConfigMap
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: ConfigMap
+      name: "{{ ocp4_workload_rhoai3x_guardrails_config_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails API token Secret
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails view RoleBinding
+    kubernetes.core.k8s:
+      state: absent
+      api_version: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}-view"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+  - name: Remove NeMo Guardrails ServiceAccount
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: ServiceAccount
+      name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+# 0c. Playground MaaS key + minter (added when the MaaS model is in the dropdown)
+- name: Remove Playground MaaS key resources
+  when:
+  - ocp4_workload_rhoai3x_gen_ai_studio_enable | bool
+  - ocp4_workload_rhoai3x_playground_maas_model | bool
+  block:
+  - name: Remove the minter SA from the MaaS subscription owner.users
+    kubernetes.core.k8s:
+      state: patched
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+      definition:
+        spec:
+          owner:
+            users: []
+    failed_when: false
+
+  - name: Remove the Playground MaaS key + minter Secrets and SA
+    kubernetes.core.k8s:
+      state: absent
+      api_version: v1
+      kind: "{{ item.kind }}"
+      name: "{{ item.name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+    loop:
+    - { kind: Secret, name: "{{ ocp4_workload_rhoai3x_playground_maas_key_secret }}" }
+    - { kind: Secret, name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}-token" }
+    - { kind: ServiceAccount, name: "{{ ocp4_workload_rhoai3x_playground_maas_minter_sa }}" }
+    loop_control:
+      label: "{{ item.kind }}/{{ item.name }}"
 
 # 0. Gen AI Playground (LlamaStackDistribution + ConfigMap)
 - name: Remove LlamaStackDistribution

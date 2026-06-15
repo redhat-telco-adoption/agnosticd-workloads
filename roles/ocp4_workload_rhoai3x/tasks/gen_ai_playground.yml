@@ -4,9 +4,16 @@
 # Creates a LlamaStackDistribution backed by the deployed vLLM InferenceService.
 # Requires: llamastackoperator: Managed in DSC, genAiStudio: true in
 #           OdhDashboardConfig, and the model InferenceService to be Ready.
+# Extra selectable models (MaaS-metered, Guardrails-filtered) are added to the
+# dropdown automatically when their backends exist; the MaaS one needs an sk- key.
 # ---------------------------------------------------------------------------
 
+- name: Mint the Playground MaaS API key
+  when: ocp4_workload_rhoai3x_playground_maas_model | bool
+  ansible.builtin.include_tasks: playground_maas_key.yml
+
 - name: Create LlamaStack config ConfigMap
+  register: _ocp4_workload_rhoai3x_lsd_cm
   kubernetes.core.k8s:
     state: present
     definition:
@@ -147,7 +154,70 @@
           server:
             port: 8321
 
+# Append the MaaS / Guardrails providers + models by post-processing the config
+# (parsing then re-dumping) instead of templating inside the literal block, which
+# would break the YAML scalar.
+- name: Add extra selectable models to the LlamaStack config
+  when: >-
+    ocp4_workload_rhoai3x_playground_maas_model | bool
+    or ocp4_workload_rhoai3x_playground_guardrails_model | bool
+  vars:
+    _cfg: "{{ _ocp4_workload_rhoai3x_lsd_cm.result.data['config.yaml'] | from_yaml }}"
+    _max: "${env.VLLM_MAX_TOKENS:={{ ocp4_workload_rhoai3x_gen_ai_playground_max_tokens }}}"
+    _extra_providers: >-
+      {{
+        ([{'provider_id': 'vllm-maas', 'provider_type': 'remote::vllm', 'config': {
+            'api_token': '${env.VLLM_API_TOKEN_MAAS:=fake}',
+            'base_url': ocp4_workload_rhoai3x_playground_maas_base_url,
+            'max_tokens': _max, 'tls_verify': '${env.VLLM_TLS_VERIFY:=false}'}}]
+          if ocp4_workload_rhoai3x_playground_maas_model | bool else [])
+        + ([{'provider_id': 'vllm-guardrails', 'provider_type': 'remote::vllm', 'config': {
+            'api_token': '${env.VLLM_API_TOKEN_GUARDRAILS:=fake}',
+            'base_url': ocp4_workload_rhoai3x_playground_guardrails_base_url,
+            'max_tokens': _max, 'tls_verify': '${env.VLLM_TLS_VERIFY:=false}'}}]
+          if ocp4_workload_rhoai3x_playground_guardrails_model | bool else [])
+      }}
+    _extra_models: >-
+      {{
+        ([{'provider_id': 'vllm-maas', 'model_id': ocp4_workload_rhoai3x_model_name ~ '-maas',
+           'provider_model_id': ocp4_workload_rhoai3x_model_name, 'model_type': 'llm',
+           'metadata': {'display_name': ocp4_workload_rhoai3x_model_display_name ~ ' (MaaS - metered)'}}]
+          if ocp4_workload_rhoai3x_playground_maas_model | bool else [])
+        + ([{'provider_id': 'vllm-guardrails', 'model_id': ocp4_workload_rhoai3x_model_name ~ '-guardrails',
+           'provider_model_id': ocp4_workload_rhoai3x_model_name, 'model_type': 'llm',
+           'metadata': {'display_name': ocp4_workload_rhoai3x_model_display_name ~ ' (Guardrails - PII filtered)'}}]
+          if ocp4_workload_rhoai3x_playground_guardrails_model | bool else [])
+      }}
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_gen_ai_playground_config_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_model_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+      data:
+        config.yaml: "{{ _cfg | combine({'providers': {'inference': _cfg.providers.inference + _extra_providers}, 'registered_resources': {'models': _cfg.registered_resources.models + _extra_models}}, recursive=True) | to_nice_yaml(indent=2) }}"
+
 - name: Create LlamaStackDistribution for Gen AI Playground
+  vars:
+    _ocp4_workload_rhoai3x_playground_env: >-
+      {{
+        [
+          {'name': 'VLLM_TLS_VERIFY', 'value': 'false'},
+          {'name': 'MILVUS_DB_PATH', 'value': '~/.llama/milvus.db'},
+          {'name': 'FMS_ORCHESTRATOR_URL', 'value': 'http://localhost'},
+          {'name': 'VLLM_MAX_TOKENS', 'value': ocp4_workload_rhoai3x_gen_ai_playground_max_tokens | string},
+          {'name': 'VLLM_API_TOKEN_1', 'value': 'fake'},
+          {'name': 'LLAMA_STACK_CONFIG_DIR', 'value': '/opt/app-root/src/.llama/distributions/rh/'}
+        ]
+        + ([{'name': 'VLLM_API_TOKEN_MAAS', 'valueFrom': {'secretKeyRef': {'name': ocp4_workload_rhoai3x_playground_maas_key_secret, 'key': 'token'}}}]
+           if ocp4_workload_rhoai3x_playground_maas_model | bool else [])
+        + ([{'name': 'VLLM_API_TOKEN_GUARDRAILS', 'valueFrom': {'secretKeyRef': {'name': ocp4_workload_rhoai3x_guardrails_token_secret, 'key': 'token'}}}]
+           if ocp4_workload_rhoai3x_playground_guardrails_model | bool else [])
+      }}
   kubernetes.core.k8s:
     state: present
     definition:
@@ -174,19 +244,9 @@
             - /bin/sh
             - -c
             - llama stack run /etc/llama-stack/config.yaml
-            env:
-            - name: VLLM_TLS_VERIFY
-              value: "false"
-            - name: MILVUS_DB_PATH
-              value: ~/.llama/milvus.db
-            - name: FMS_ORCHESTRATOR_URL
-              value: http://localhost
-            - name: VLLM_MAX_TOKENS
-              value: "{{ ocp4_workload_rhoai3x_gen_ai_playground_max_tokens | string }}"
-            - name: VLLM_API_TOKEN_1
-              value: fake
-            - name: LLAMA_STACK_CONFIG_DIR
-              value: /opt/app-root/src/.llama/distributions/rh/
+            # Built as a var so the MaaS/Guardrails token env vars can be appended
+            # conditionally (inline {% if %} can't be used inside a structured list).
+            env: "{{ _ocp4_workload_rhoai3x_playground_env }}"
             resources:
               requests:
                 cpu: 250m

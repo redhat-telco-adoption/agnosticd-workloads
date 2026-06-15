@@ -1,0 +1,193 @@
+---
+# ---------------------------------------------------------------------------
+# AI Safety Guardrails — NeMo Guardrails via the TrustyAI operator.
+# Stands a NeMo Guardrails service in front of the deployed model and applies
+# Presidio-backed sensitive-data (PII) detection on inputs and outputs.
+#
+# Creates, in the model's namespace:
+#   - a ServiceAccount + a `view` RoleBinding (lets NeMo discover the model svc)
+#   - a service-account-token Secret (api-token-secret/token) -> OPENAI_API_KEY
+#   - a ConfigMap (config.yaml + rails.co) with the PII detection rails
+#   - the NemoGuardrails CR (trustyai.opendatahub.io/v1alpha1)
+#
+# Requires: TrustyAI DSC component Managed (datasciencecluster.yml sets it when
+# guardrails_enable is true) and a deployed model (model_deploy).
+# NemoGuardrails is standalone — no GuardrailsOrchestrator is needed.
+# ---------------------------------------------------------------------------
+
+- name: Create the NeMo Guardrails ServiceAccount
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+- name: Bind the view ClusterRole to the NeMo Guardrails ServiceAccount
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}-view"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: view
+      subjects:
+      - kind: ServiceAccount
+        name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+
+- name: Create the API token Secret for the ServiceAccount
+  # A service-account-token Secret is auto-populated by the token controller with
+  # a long-lived bearer token under data.token. NeMo's openai engine consumes it
+  # as OPENAI_API_KEY. Declarative + non-expiring, unlike `oc create token`
+  # (--duration=336h) from the docs, so it never lapses mid-demo.
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+        annotations:
+          kubernetes.io/service-account.name: "{{ ocp4_workload_rhoai3x_guardrails_sa_name }}"
+      type: kubernetes.io/service-account-token
+
+- name: Wait for the token Secret to be populated by the controller
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
+    namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+  register: _ocp4_workload_rhoai3x_guardrails_token
+  retries: 12
+  delay: 5
+  until:
+  - _ocp4_workload_rhoai3x_guardrails_token.resources | length == 1
+  - _ocp4_workload_rhoai3x_guardrails_token.resources[0].data is defined
+  - _ocp4_workload_rhoai3x_guardrails_token.resources[0].data.token is defined
+
+- name: Create the NeMo Guardrails configuration ConfigMap
+  # The config is built as a structured var and serialized with to_nice_yaml so
+  # the embedded entity lists always render as valid YAML inside the config.yaml
+  # block. The data key MUST be `config.yaml` (the TrustyAI operator mounts every
+  # file from the ConfigMap into /app/config/<nemoConfigs.name>/).
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_guardrails_config_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+      data:
+        config.yaml: "{{ _ocp4_workload_rhoai3x_guardrails_config | to_nice_yaml(indent=2) }}"
+        rails.co: |
+          # Built-in sensitive data detection flows (Presidio). No custom Colang.
+  vars:
+    # Flows and prompts are assembled conditionally so self-check rails can be
+    # toggled without breaking the YAML scalar (each is a single Jinja
+    # expression, so Ansible preserves the list/dict type when dumped).
+    # Input order: jailbreak/self-check first, then PII detection.
+    _gr_input_flows: >-
+      {{ (['self check input'] if ocp4_workload_rhoai3x_guardrails_self_check_input | bool else [])
+         + ['detect sensitive data on input'] }}
+    _gr_output_flows: >-
+      {{ ['detect sensitive data on output']
+         + (['self check output'] if ocp4_workload_rhoai3x_guardrails_self_check_output | bool else []) }}
+    # max_tokens per task lifts NeMo's 3-token self-check cap so the reasoning
+    # model can finish thinking before emitting Yes/No (else it blocks everything).
+    _gr_prompts: >-
+      {{ ([{'task': 'self_check_input', 'content': ocp4_workload_rhoai3x_guardrails_self_check_input_prompt,
+            'max_tokens': ocp4_workload_rhoai3x_guardrails_self_check_max_tokens | int}]
+            if ocp4_workload_rhoai3x_guardrails_self_check_input | bool else [])
+         + ([{'task': 'self_check_output', 'content': ocp4_workload_rhoai3x_guardrails_self_check_output_prompt,
+            'max_tokens': ocp4_workload_rhoai3x_guardrails_self_check_max_tokens | int}]
+            if ocp4_workload_rhoai3x_guardrails_self_check_output | bool else []) }}
+    _ocp4_workload_rhoai3x_guardrails_config:
+      models:
+      - type: main
+        engine: openai
+        parameters:
+          openai_api_base: "{{ ocp4_workload_rhoai3x_guardrails_model_predictor_url }}"
+          model_name: "{{ ocp4_workload_rhoai3x_guardrails_model_name }}"
+          # Reasoning models need headroom to finish thinking before the Yes/No
+          # answer lands in `content`; without this self-check fail-closes.
+          max_tokens: "{{ ocp4_workload_rhoai3x_guardrails_model_max_tokens | int }}"
+      rails:
+        config:
+          sensitive_data_detection:
+            input:
+              score_threshold: "{{ ocp4_workload_rhoai3x_guardrails_pii_score_threshold | float }}"
+              entities: "{{ ocp4_workload_rhoai3x_guardrails_pii_entities_input }}"
+            output:
+              score_threshold: "{{ ocp4_workload_rhoai3x_guardrails_pii_score_threshold | float }}"
+              entities: "{{ ocp4_workload_rhoai3x_guardrails_pii_entities_output }}"
+        input:
+          flows: "{{ _gr_input_flows }}"
+        output:
+          flows: "{{ _gr_output_flows }}"
+          # Required for streaming clients (e.g. the Gen AI Playground UI): NeMo
+          # raises StreamingNotSupportedError on a streamed request when an output
+          # rail is configured unless output streaming is explicitly enabled.
+          # stream_first=false runs the output rails before delivering chunks so a
+          # blocked response cannot leak mid-stream.
+          streaming:
+            enabled: true
+            stream_first: "{{ ocp4_workload_rhoai3x_guardrails_output_stream_first | bool }}"
+      prompts: "{{ _gr_prompts }}"
+
+- name: Create the NemoGuardrails resource
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: trustyai.opendatahub.io/v1alpha1
+      kind: NemoGuardrails
+      metadata:
+        name: "{{ ocp4_workload_rhoai3x_guardrails_name }}"
+        namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+        annotations:
+          security.opendatahub.io/enable-auth: "true"
+      spec:
+        nemoConfigs:
+        - name: default-config
+          configMaps:
+          - "{{ ocp4_workload_rhoai3x_guardrails_config_name }}"
+          default: true
+        replicas: "{{ ocp4_workload_rhoai3x_guardrails_replicas | int }}"
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: "{{ ocp4_workload_rhoai3x_guardrails_token_secret }}"
+              key: token
+        # Lets the NeMo server proxy GET /v1/models to the backing model, which
+        # makes the guarded endpoint a valid OpenAI-compatible server (e.g. so a
+        # LlamaStack remote::vllm provider can discover it). Same URL as the rails
+        # config's openai_api_base.
+        - name: MAIN_MODEL_BASE_URL
+          value: "{{ ocp4_workload_rhoai3x_guardrails_model_predictor_url }}"
+
+- name: Wait for the NeMo Guardrails deployment to become Available
+  # The operator names the Deployment/Service/Route after the CR.
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ ocp4_workload_rhoai3x_guardrails_name }}"
+    namespace: "{{ ocp4_workload_rhoai3x_guardrails_namespace }}"
+  register: _ocp4_workload_rhoai3x_guardrails_deploy
+  retries: "{{ ocp4_workload_rhoai3x_guardrails_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_guardrails_wait_delay }}"
+  until:
+  - _ocp4_workload_rhoai3x_guardrails_deploy.resources | length == 1
+  - _ocp4_workload_rhoai3x_guardrails_deploy.resources[0].status.readyReplicas is defined
+  - >-
+    _ocp4_workload_rhoai3x_guardrails_deploy.resources[0].status.readyReplicas
+    | int >= 1

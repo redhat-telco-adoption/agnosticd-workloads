@@ -1,0 +1,101 @@
+---
+# ---------------------------------------------------------------------------
+# MaaS re-run safety health check.
+#
+# WHY this exists:
+#   Re-running this role's full provision over an ALREADY-INSTALLED, healthy
+#   MaaS corrupts the MaaS gateway auth chain. The observability path
+#   (maas_observability.yml) re-installs/churns COO + OpenTelemetry + perses,
+#   which briefly removes the perses-operator-service endpoints; concurrently
+#   the publish path (maas_publish_sample.yml) re-applies the
+#   LLMInferenceService/MaaSSubscription/MaaSAuthPolicy, triggering a
+#   maas-controller Tenant reconcile that aborts mid-way on the perses
+#   conversion webhook — leaving the gateway/Authorino auth chain corrupted
+#   (every maas-api call then 500s). It does NOT self-heal across restarts.
+#
+#   So: detect a positively-healthy MaaS and let workload.yml SKIP the two
+#   disruptive includes on a re-run. This check is CONSERVATIVE — the fact is
+#   true ONLY when every signal below confirms health; any missing resource,
+#   missing status, or query error yields false, so first installs and genuine
+#   repairs still run the full provision as before.
+# ---------------------------------------------------------------------------
+
+# Start from the safe default: assume NOT healthy (i.e. run the steps). Only the
+# positive checks below can flip this to true. If MaaS is not enabled this is the
+# value that stands.
+- name: Default the MaaS-already-healthy fact to false (safe = run the steps)
+  ansible.builtin.set_fact:
+    ocp4_workload_rhoai3x_maas_already_healthy: false
+
+- name: Probe the existing MaaS resources for health (re-run safety)
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  block:
+
+  - name: Get the MaaS Tenant (default-tenant)
+    kubernetes.core.k8s_info:
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: Tenant
+      name: default-tenant
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+    register: _ocp4_workload_rhoai3x_maas_hc_tenant
+    failed_when: false
+
+  - name: Get the published LLMInferenceService
+    kubernetes.core.k8s_info:
+      api_version: serving.kserve.io/v1alpha1
+      kind: LLMInferenceService
+      name: "{{ ocp4_workload_rhoai3x_maas_sample_isvc_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_sample_namespace }}"
+    register: _ocp4_workload_rhoai3x_maas_hc_isvc
+    failed_when: false
+
+  - name: Get the MaaSSubscription
+    kubernetes.core.k8s_info:
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSSubscription
+      name: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+    register: _ocp4_workload_rhoai3x_maas_hc_subscription
+    failed_when: false
+
+  - name: Get the MaaSAuthPolicy
+    kubernetes.core.k8s_info:
+      api_version: maas.opendatahub.io/v1alpha1
+      kind: MaaSAuthPolicy
+      name: "{{ ocp4_workload_rhoai3x_maas_authpolicy_name }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_namespace }}"
+    register: _ocp4_workload_rhoai3x_maas_hc_authpolicy
+    failed_when: false
+
+  # Each clause is default-safe: a missing resource (resources == []) or a
+  # missing status/conditions path collapses to false via | default(...), never
+  # an error. The fact is the AND of all four positive signals.
+  - name: Set the MaaS-already-healthy fact (true only when ALL signals are healthy)
+    ansible.builtin.set_fact:
+      ocp4_workload_rhoai3x_maas_already_healthy: >-
+        {{
+          (_ocp4_workload_rhoai3x_maas_hc_tenant.resources | default([])
+            | map(attribute='status.conditions') | map('default', [], true) | flatten
+            | selectattr('type', 'equalto', 'Ready')
+            | selectattr('status', 'equalto', 'True') | list | length > 0)
+          and
+          (_ocp4_workload_rhoai3x_maas_hc_isvc.resources | default([])
+            | map(attribute='status.conditions') | map('default', [], true) | flatten
+            | selectattr('type', 'equalto', 'Ready')
+            | selectattr('status', 'equalto', 'True') | list | length > 0)
+          and
+          (_ocp4_workload_rhoai3x_maas_hc_subscription.resources | default([])
+            | map(attribute='status.phase') | map('default', '', true)
+            | select('equalto', 'Active') | list | length > 0)
+          and
+          (_ocp4_workload_rhoai3x_maas_hc_authpolicy.resources | default([])
+            | map(attribute='status.phase') | map('default', '', true)
+            | select('equalto', 'Active') | list | length > 0)
+        }}
+
+  - name: Report the MaaS health-check result
+    ansible.builtin.debug:
+      msg: >-
+        MaaS health check: already_healthy={{ ocp4_workload_rhoai3x_maas_already_healthy }}
+        (Tenant Ready, LLMInferenceService Ready, MaaSSubscription Active, and
+        MaaSAuthPolicy Active must ALL hold for a true result).
