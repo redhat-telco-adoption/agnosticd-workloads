@@ -177,8 +177,11 @@
 # Terminal check: the MaaS controller creates the Usage-tab PersesDatasource
 # (kuadrant-prometheus-datasource, in redhat-ods-applications) on its next Tenant
 # reconcile — but only once telemetry is on AND the Perses CRD/webhook are up.
-# Its reconcile loop runs every ~5 min, so allow a full cycle. Until this is
-# Available, the dashboard Usage tab shows "No datasource found".
+# The perses-operator requeues it on a slow (~5-15 min) cycle, and its CA-configmap
+# dependency (prometheus-web-tls-ca) can land late in the run, resetting that clock.
+# So use a dedicated ~20-min budget AND keep this NON-FATAL: it is purely cosmetic
+# (only the dashboard Usage tab depends on it — until Available it shows
+# "No datasource found"), and must not fail an otherwise-complete provision.
 - name: Wait for the MaaS Usage observability datasource to be reconciled
   kubernetes.core.k8s_info:
     api_version: perses.dev/v1alpha2
@@ -186,11 +189,27 @@
     name: kuadrant-prometheus-datasource
     namespace: redhat-ods-applications
   register: _ocp4_workload_rhoai3x_maas_usage_ds
-  retries: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_retries }}"
-  delay: "{{ ocp4_workload_rhoai3x_maas_monitoring_wait_delay }}"
+  retries: "{{ ocp4_workload_rhoai3x_maas_usage_datasource_wait_retries }}"
+  delay: "{{ ocp4_workload_rhoai3x_maas_usage_datasource_wait_delay }}"
   until:
   - _ocp4_workload_rhoai3x_maas_usage_ds.resources | length == 1
   - >-
     (_ocp4_workload_rhoai3x_maas_usage_ds.resources[0].status.conditions | default([])
      | selectattr('type', 'equalto', 'Available')
      | selectattr('status', 'equalto', 'True') | list | length) > 0
+  failed_when: false
+
+- name: Report the Usage observability datasource status (non-fatal)
+  vars:
+    _ds_available: >-
+      {{ (_ocp4_workload_rhoai3x_maas_usage_ds.resources | default([])
+          | map(attribute='status.conditions') | map('default', [], true) | flatten
+          | selectattr('type', 'equalto', 'Available')
+          | selectattr('status', 'equalto', 'True') | list | length) > 0 }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'MaaS Usage observability datasource is Available.' if (_ds_available | bool)
+         else 'WARNING: the MaaS Usage datasource (kuadrant-prometheus-datasource) is
+               still reconciling after the wait budget. The provision is complete; the
+               dashboard Usage tab may show "No datasource found" until the
+               perses-operator finishes its next reconcile cycle (a few more minutes).' }}

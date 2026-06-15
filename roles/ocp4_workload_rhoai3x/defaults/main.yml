@@ -534,6 +534,16 @@ ocp4_workload_rhoai3x_maas_monitoring_retention: "15d"
 ocp4_workload_rhoai3x_maas_monitoring_wait_retries: 40
 ocp4_workload_rhoai3x_maas_monitoring_wait_delay: 15
 
+# Usage-tab PersesDatasource (kuadrant-prometheus-datasource) reconcile wait.
+# Dedicated, generous budget: the perses-operator requeues this datasource on a
+# slow (~5-15 min) cycle, and its CA-configmap dependency can land late in the
+# run, resetting the reconcile clock — the shared 10-min budget missed it by ~1
+# min in testing. ~20 min covers a couple of cycles. This is a terminal cosmetic
+# check (only the dashboard Usage tab depends on it), so the task is non-fatal:
+# it warns if still reconciling rather than failing the whole provision.
+ocp4_workload_rhoai3x_maas_usage_datasource_wait_retries: 60
+ocp4_workload_rhoai3x_maas_usage_datasource_wait_delay: 20
+
 # Tenant telemetry capture flags. captureUser/Group default off (privacy +
 # Prometheus cardinality); enable captureUser for the per-user token table.
 ocp4_workload_rhoai3x_maas_telemetry_capture_organization: true
