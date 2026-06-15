@@ -1,0 +1,60 @@
+---
+# ---------------------------------------------------------------------------
+# Mint ONE per-user MaaS key (included per-user from maas_mint_keys.yml).
+#
+# Grants the user's OWN OpenShift token via the challenging client (their token
+# IS authorized for inference as a subscription-group member), mints an sk- key
+# named "<client>-<user>", and accumulates it into the in-memory map
+# _ocp4_workload_rhoai3x_mint_new_keys. The Secret is written ONCE by the caller
+# after the loop. No OpenShift token is ever persisted; every task is no_log.
+#
+# loop var: _ocp4_workload_rhoai3x_mint_user (the username)
+# ---------------------------------------------------------------------------
+
+- name: "Grant the challenging-client token for user {{ _ocp4_workload_rhoai3x_mint_user }}"
+  ansible.builtin.uri:
+    url: >-
+      https://{{ _ocp4_workload_rhoai3x_mint_oauth_host }}/oauth/authorize?client_id={{
+      ocp4_workload_rhoai3x_maas_client_mint_oauth_client }}&response_type=token
+    method: GET
+    force_basic_auth: true
+    url_username: "{{ _ocp4_workload_rhoai3x_mint_user }}"
+    url_password: "{{ ocp4_workload_rhoai3x_maas_client_mint_user_password }}"
+    headers:
+      X-CSRF-Token: "1"
+    follow_redirects: none
+    status_code: [302]
+    validate_certs: false
+  register: _ocp4_workload_rhoai3x_mint_user_grant
+  no_log: true
+
+- name: "Extract the access_token for user {{ _ocp4_workload_rhoai3x_mint_user }}"
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_user_token: >-
+      {{ _ocp4_workload_rhoai3x_mint_user_grant.location
+         | default('') | regex_search('access_token=([^&]+)', '\1') | first | default('') }}
+  no_log: true
+
+- name: "Mint the MaaS API key for user {{ _ocp4_workload_rhoai3x_mint_user }}"
+  ansible.builtin.uri:
+    url: "{{ _ocp4_workload_rhoai3x_mint_maas_base }}/maas-api/v1/api-keys"
+    method: POST
+    validate_certs: false
+    headers:
+      Authorization: "Bearer {{ _ocp4_workload_rhoai3x_mint_user_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-{{ _ocp4_workload_rhoai3x_mint_user }}"
+      subscription: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+      expiresInDays: "{{ ocp4_workload_rhoai3x_maas_client_mint_expiry_days | int }}"
+    status_code: [200, 201]
+  register: _ocp4_workload_rhoai3x_mint_user_resp
+  no_log: true
+
+- name: "Accumulate the minted key for user {{ _ocp4_workload_rhoai3x_mint_user }}"
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_new_keys: >-
+      {{ (_ocp4_workload_rhoai3x_mint_new_keys | default({}))
+         | combine({_ocp4_workload_rhoai3x_mint_user: _ocp4_workload_rhoai3x_mint_user_resp.json.key}) }}
+  no_log: true

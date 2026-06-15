@@ -30,6 +30,9 @@
     name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
     namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
   register: _ocp4_workload_rhoai3x_mc_key
+  # Skipped when automint already produced the key Secret; kept as the fallback
+  # assertion for automint-off / OIDC (externally-provided key) deployments.
+  when: not (automint_effective | default(false))
   failed_when:
   - _ocp4_workload_rhoai3x_mc_key.resources | length == 0
 
@@ -70,6 +73,9 @@
       name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
       namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
     register: _ocp4_workload_rhoai3x_mc_userkeys
+    # Skipped when automint already produced the userkeys Secret; kept as the
+    # fallback assertion for automint-off / OIDC deployments.
+    when: not (automint_effective | default(false))
     failed_when: _ocp4_workload_rhoai3x_mc_userkeys.resources | length == 0
 
   - name: Create the inject-proxy code ConfigMap

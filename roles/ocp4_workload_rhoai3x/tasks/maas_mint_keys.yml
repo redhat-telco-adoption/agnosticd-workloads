@@ -1,0 +1,232 @@
+---
+# ---------------------------------------------------------------------------
+# Automated MaaS API-key minting (Phase 2b — Path A + A+)
+#
+# Mints sk- MaaS keys unattended so the OpenWebUI client deploys without anyone
+# pre-creating keys by hand. Unlike the playground minter (an owner.user SA whose
+# keys 403 on inference), this mints keys AS REAL subscription-group members via
+# the OpenShift "challenging" OAuth client:
+#
+#   GET https://<oauth-host>/oauth/authorize?client_id=<challenging>&response_type=token
+#       (force_basic_auth with the identity's user/password; X-CSRF-Token: 1;
+#        follow_redirects: none) -> scrape access_token from the 302 Location
+#   POST https://maas.<domain>/maas-api/v1/api-keys -> .key = sk- key
+#
+# Those keys ARE authorized for inference (the user is a group member), so the
+# shared key and per-user keys produced here work end-to-end.
+#
+# Requires a CHALLENGE-CAPABLE IdP (htpasswd / LDAP). OIDC IdPs cannot serve the
+# challenging-client grant; on those this degrades gracefully: if a pre-existing
+# key Secret is present it is reused (automint_effective=false) and the rest is
+# skipped; otherwise the task fails with guidance.
+#
+# Idempotent: only missing entries are minted (existing Secrets are left alone),
+# so re-runs do not accumulate keys on the subscription.
+#
+# Persists ONLY sk- keys. The OpenShift bearer tokens used to mint are never
+# stored, and every task touching a password / token / key sets no_log: true.
+# ---------------------------------------------------------------------------
+
+- name: Resolve the OpenShift OAuth route host
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: oauth-openshift
+    namespace: openshift-authentication
+  register: _ocp4_workload_rhoai3x_mint_oauth_route
+
+- name: Resolve the cluster ingress domain (for the maas base URL)
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: _ocp4_workload_rhoai3x_mint_ingress
+
+- name: Compute the OAuth host and the maas base URL
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_oauth_host: "{{ _ocp4_workload_rhoai3x_mint_oauth_route.resources[0].spec.host }}"
+    _ocp4_workload_rhoai3x_mint_maas_base: "https://maas.{{ _ocp4_workload_rhoai3x_mint_ingress.resources[0].spec.domain }}"
+
+# ---------------------------------------------------------------------------
+# Pre-flight: can we obtain an OpenShift token for the admin identity via the
+# challenging client? This both proves the IdP is challenge-capable and yields
+# the token used to mint the shared key.
+# ---------------------------------------------------------------------------
+- name: Look up any pre-existing shared key Secret (fallback detection)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mint_existing_shared
+
+- name: Attempt the challenging-client grant for the admin identity
+  ansible.builtin.uri:
+    url: >-
+      https://{{ _ocp4_workload_rhoai3x_mint_oauth_host }}/oauth/authorize?client_id={{
+      ocp4_workload_rhoai3x_maas_client_mint_oauth_client }}&response_type=token
+    method: GET
+    force_basic_auth: true
+    url_username: "{{ ocp4_workload_rhoai3x_maas_client_mint_admin_user }}"
+    url_password: "{{ ocp4_workload_rhoai3x_maas_client_mint_admin_password }}"
+    headers:
+      X-CSRF-Token: "1"
+    follow_redirects: none
+    status_code: [302]
+    validate_certs: false
+  register: _ocp4_workload_rhoai3x_mint_admin_grant
+  failed_when: false
+  no_log: true
+
+- name: Extract the admin access_token from the redirect Location
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_admin_token: >-
+      {{ _ocp4_workload_rhoai3x_mint_admin_grant.location
+         | default('') | regex_search('access_token=([^&]+)', '\1') | first | default('') }}
+  no_log: true
+
+- name: Degrade gracefully when the grant failed but a key Secret already exists
+  ansible.builtin.set_fact:
+    automint_effective: false
+  when:
+  - _ocp4_workload_rhoai3x_mint_admin_token | length == 0
+  - _ocp4_workload_rhoai3x_mint_existing_shared.resources | length > 0
+
+- name: Fail when automint cannot proceed and there is no fallback key
+  ansible.builtin.fail:
+    msg: >-
+      Automated MaaS key minting could not obtain an OpenShift token via the
+      challenging client '{{ ocp4_workload_rhoai3x_maas_client_mint_oauth_client }}'.
+      Automint requires a CHALLENGE-CAPABLE IdP (htpasswd or LDAP). OIDC IdPs are
+      not supported. Either switch to a challenge-capable IdP, or pre-create the
+      shared key Secret '{{ ocp4_workload_rhoai3x_maas_client_key_secret }}' (and,
+      for per-user metering, '{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}')
+      in namespace '{{ ocp4_workload_rhoai3x_maas_client_namespace }}' and set
+      ocp4_workload_rhoai3x_maas_client_automint=false.
+  when:
+  - _ocp4_workload_rhoai3x_mint_admin_token | length == 0
+  - _ocp4_workload_rhoai3x_mint_existing_shared.resources | length == 0
+
+- name: Mark automint effective (the grant succeeded)
+  ansible.builtin.set_fact:
+    automint_effective: true
+  when: _ocp4_workload_rhoai3x_mint_admin_token | length > 0
+
+# ---------------------------------------------------------------------------
+# SHARED key — minted by the admin (a real group member). Idempotent: skip when
+# the Secret already exists.
+# ---------------------------------------------------------------------------
+- name: Provision the shared MaaS key
+  when:
+  - automint_effective | bool
+  - _ocp4_workload_rhoai3x_mint_existing_shared.resources | length == 0
+  block:
+  - name: Mint the shared MaaS API key via the maas-api
+    ansible.builtin.uri:
+      url: "{{ _ocp4_workload_rhoai3x_mint_maas_base }}/maas-api/v1/api-keys"
+      method: POST
+      validate_certs: false
+      headers:
+        Authorization: "Bearer {{ _ocp4_workload_rhoai3x_mint_admin_token }}"
+        Content-Type: application/json
+      body_format: json
+      body:
+        name: "{{ ocp4_workload_rhoai3x_maas_client_name }}-shared"
+        subscription: "{{ ocp4_workload_rhoai3x_maas_subscription_name }}"
+        expiresInDays: "{{ ocp4_workload_rhoai3x_maas_client_mint_expiry_days | int }}"
+      status_code: [200, 201]
+    register: _ocp4_workload_rhoai3x_mint_shared_resp
+    no_log: true
+
+  - name: Store the shared MaaS key in a Secret
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: "{{ ocp4_workload_rhoai3x_maas_client_key_secret }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+          labels:
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        stringData:
+          token: "{{ _ocp4_workload_rhoai3x_mint_shared_resp.json.key }}"
+    no_log: true
+
+# ---------------------------------------------------------------------------
+# PER-USER keys — each minted BY that user (their own OAuth token IS authorized).
+# Build the user list, read existing keys, mint only the missing ones, then write
+# the userkeys Secret ONCE (username -> sk- map).
+# ---------------------------------------------------------------------------
+- name: Provision per-user MaaS keys
+  when:
+  - automint_effective | bool
+  - ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  block:
+  - name: Build the per-user list
+    ansible.builtin.set_fact:
+      _ocp4_workload_rhoai3x_mint_users: >-
+        {{ ocp4_workload_rhoai3x_maas_client_mint_users
+           if (ocp4_workload_rhoai3x_maas_client_mint_users | length > 0)
+           else (range(1, (ocp4_workload_rhoai3x_maas_client_mint_user_count | int) + 1)
+                 | map('regex_replace', '^(.*)$',
+                       ocp4_workload_rhoai3x_maas_client_mint_user_prefix ~ '\1') | list) }}
+
+  - name: Read the existing per-user keys Secret
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
+      namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+    register: _ocp4_workload_rhoai3x_mint_existing_userkeys
+
+  - name: Decode the existing per-user key map
+    ansible.builtin.set_fact:
+      _ocp4_workload_rhoai3x_mint_existing_keys: >-
+        {{ (_ocp4_workload_rhoai3x_mint_existing_userkeys.resources[0].data | default({}))
+           | dict2items
+           | map(attribute='key') | list }}
+    no_log: true
+
+  - name: Mint a key for each user that does not already have one
+    # One challenging-client grant per user (their own password), then a maas-api
+    # mint as that user. Loop result is collected and merged after the loop.
+    ansible.builtin.include_tasks: maas_mint_user_key.yml
+    loop: "{{ _ocp4_workload_rhoai3x_mint_users }}"
+    loop_control:
+      loop_var: _ocp4_workload_rhoai3x_mint_user
+    when: _ocp4_workload_rhoai3x_mint_user not in _ocp4_workload_rhoai3x_mint_existing_keys
+
+  - name: Assemble the existing username -> sk- map (decoded from Secret data)
+    # Secret .data values are base64; decode them back to sk- so the rewritten
+    # Secret (via stringData) preserves the previously minted keys unchanged.
+    ansible.builtin.set_fact:
+      _ocp4_workload_rhoai3x_mint_userkeys_map: >-
+        {{ dict((_ocp4_workload_rhoai3x_mint_existing_userkeys.resources[0].data | default({})
+                 | dict2items)
+                | map(attribute='key') | list
+              | zip((_ocp4_workload_rhoai3x_mint_existing_userkeys.resources[0].data | default({})
+                 | dict2items)
+                | map(attribute='value') | map('b64decode') | list)) }}
+    no_log: true
+
+  - name: Merge the freshly minted keys into the map
+    ansible.builtin.set_fact:
+      _ocp4_workload_rhoai3x_mint_userkeys_map: >-
+        {{ _ocp4_workload_rhoai3x_mint_userkeys_map
+           | combine(_ocp4_workload_rhoai3x_mint_new_keys | default({})) }}
+    no_log: true
+
+  - name: Write the per-user keys Secret once (username -> sk- map)
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
+          namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+          labels:
+            app.kubernetes.io/managed-by: ocp4_workload_rhoai3x
+        stringData: "{{ _ocp4_workload_rhoai3x_mint_userkeys_map }}"
+    no_log: true

@@ -610,3 +610,28 @@ ocp4_workload_rhoai3x_maas_client_key_secret: "maas-client-key"
 
 ocp4_workload_rhoai3x_maas_client_wait_retries: 30
 ocp4_workload_rhoai3x_maas_client_wait_delay: 10
+
+# --- Automated key minting (Phase 2b — Path A + A+) ------------------------
+# Mint the shared and per-user sk- keys unattended via the OpenShift challenging
+# OAuth client, so the client deploys with no manual key step. Keys are minted AS
+# real subscription-group members (admin for the shared key; each user for their
+# own), so they are authorized for inference. Requires a CHALLENGE-CAPABLE IdP
+# (htpasswd/LDAP); OIDC IdPs degrade to the externally-provided key path.
+ocp4_workload_rhoai3x_maas_client_automint: true
+# The built-in OpenShift OAuth client that supports the password challenge grant.
+ocp4_workload_rhoai3x_maas_client_mint_oauth_client: "openshift-challenging-client"
+# Lifetime of every minted key, in days.
+ocp4_workload_rhoai3x_maas_client_mint_expiry_days: 365
+# Admin identity used to mint the SHARED key (defaults to the htpasswd admin from
+# ocp4_workload_authentication when present).
+ocp4_workload_rhoai3x_maas_client_mint_admin_user: "{{ ocp4_workload_authentication_htpasswd_admin_user | default('admin') }}"
+ocp4_workload_rhoai3x_maas_client_mint_admin_password: "{{ ocp4_workload_authentication_htpasswd_admin_password | default('') }}"
+# Per-user minting: how many users (userN) and the username prefix. Count defaults
+# to the htpasswd user count from ocp4_workload_authentication when present.
+ocp4_workload_rhoai3x_maas_client_mint_user_count: "{{ ocp4_workload_authentication_htpasswd_user_count | default(1) }}"
+ocp4_workload_rhoai3x_maas_client_mint_user_prefix: "user"
+# Shared password for the generated userN identities (htpasswd user password).
+ocp4_workload_rhoai3x_maas_client_mint_user_password: "{{ ocp4_workload_authentication_htpasswd_user_password | default('') }}"
+# Explicit user list. When non-empty it OVERRIDES the userN generation above
+# (e.g. ["alice", "bob"]); each must be a real, challenge-capable identity.
+ocp4_workload_rhoai3x_maas_client_mint_users: []
