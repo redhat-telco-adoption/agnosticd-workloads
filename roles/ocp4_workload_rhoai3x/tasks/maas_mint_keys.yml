@@ -60,7 +60,67 @@
     namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
   register: _ocp4_workload_rhoai3x_mint_existing_shared
 
+# ---------------------------------------------------------------------------
+# Idempotency pre-check. Determine whether ANY key still needs minting BEFORE
+# touching the maas-api management route. This matters on re-runs: once Tenant
+# telemetry has been enabled (by maas_observability.yml on a prior run), the
+# gateway keeps the management route degraded — every GET /maas-api/v1/models
+# 500s. If the shared key and all per-user keys already exist there is nothing
+# to mint, so we skip the OAuth grant, the readiness probe, and the mints
+# entirely and the re-run stays green. The grant/probe/mints below only run when
+# there is genuinely something to provision (first install / a newly added user).
+# ---------------------------------------------------------------------------
+- name: Default automint_effective to false (skip downstream unless we mint)
+  ansible.builtin.set_fact:
+    automint_effective: false
+
+- name: Build the per-user list (idempotency pre-check)
+  when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_users: >-
+      {{ ocp4_workload_rhoai3x_maas_client_mint_users
+         if (ocp4_workload_rhoai3x_maas_client_mint_users | length > 0)
+         else (range(1, (ocp4_workload_rhoai3x_maas_client_mint_user_count | int) + 1)
+               | map('regex_replace', '^(.*)$',
+                     ocp4_workload_rhoai3x_maas_client_mint_user_prefix ~ '\1') | list) }}
+
+- name: Read the existing per-user keys Secret (idempotency pre-check)
+  when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
+    namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
+  register: _ocp4_workload_rhoai3x_mint_existing_userkeys
+
+- name: Decode which usernames already have a key (idempotency pre-check)
+  when: ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_existing_keys: >-
+      {{ (_ocp4_workload_rhoai3x_mint_existing_userkeys.resources[0].data | default({}))
+         | dict2items
+         | map(attribute='key') | list }}
+  no_log: true
+
+- name: Determine whether any MaaS key still needs minting
+  ansible.builtin.set_fact:
+    _ocp4_workload_rhoai3x_mint_need_any: >-
+      {{ (_ocp4_workload_rhoai3x_mint_existing_shared.resources | length == 0)
+         or (ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
+             and ((_ocp4_workload_rhoai3x_mint_users | default([]))
+                  | difference(_ocp4_workload_rhoai3x_mint_existing_keys | default([]))
+                  | length > 0)) }}
+
+- name: Report that all MaaS keys already exist (idempotent skip)
+  when: not (_ocp4_workload_rhoai3x_mint_need_any | bool)
+  ansible.builtin.debug:
+    msg: >-
+      All MaaS keys are already present (shared key Secret and every per-user key),
+      so minting is skipped without calling the maas-api management route. This keeps
+      re-runs green even when Tenant telemetry has degraded that route.
+
 - name: Attempt the challenging-client grant for the admin identity
+  when: _ocp4_workload_rhoai3x_mint_need_any | bool
   ansible.builtin.uri:
     url: >-
       https://{{ _ocp4_workload_rhoai3x_mint_oauth_host }}/oauth/authorize?client_id={{
@@ -79,6 +139,7 @@
   no_log: true
 
 - name: Extract the admin access_token from the redirect Location
+  when: _ocp4_workload_rhoai3x_mint_need_any | bool
   ansible.builtin.set_fact:
     _ocp4_workload_rhoai3x_mint_admin_token: >-
       {{ _ocp4_workload_rhoai3x_mint_admin_grant.location
@@ -89,6 +150,7 @@
   ansible.builtin.set_fact:
     automint_effective: false
   when:
+  - _ocp4_workload_rhoai3x_mint_need_any | bool
   - _ocp4_workload_rhoai3x_mint_admin_token | length == 0
   - _ocp4_workload_rhoai3x_mint_existing_shared.resources | length > 0
 
@@ -104,13 +166,16 @@
       in namespace '{{ ocp4_workload_rhoai3x_maas_client_namespace }}' and set
       ocp4_workload_rhoai3x_maas_client_automint=false.
   when:
+  - _ocp4_workload_rhoai3x_mint_need_any | bool
   - _ocp4_workload_rhoai3x_mint_admin_token | length == 0
   - _ocp4_workload_rhoai3x_mint_existing_shared.resources | length == 0
 
 - name: Mark automint effective (the grant succeeded)
   ansible.builtin.set_fact:
     automint_effective: true
-  when: _ocp4_workload_rhoai3x_mint_admin_token | length > 0
+  when:
+  - _ocp4_workload_rhoai3x_mint_need_any | bool
+  - _ocp4_workload_rhoai3x_mint_admin_token | length > 0
 
 # ---------------------------------------------------------------------------
 # Readiness gate: the maas-api auth chain (gateway -> Authorino -> maas-api) can
@@ -185,39 +250,19 @@
 
 # ---------------------------------------------------------------------------
 # PER-USER keys — each minted BY that user (their own OAuth token IS authorized).
-# Build the user list, read existing keys, mint only the missing ones, then write
-# the userkeys Secret ONCE (username -> sk- map).
+# The user list and existing keys were resolved in the idempotency pre-check above;
+# here we mint only the missing ones, then write the userkeys Secret ONCE
+# (username -> sk- map).
 # ---------------------------------------------------------------------------
 - name: Provision per-user MaaS keys
   when:
   - automint_effective | bool
   - ocp4_workload_rhoai3x_maas_client_per_user_metering | bool
   block:
-  - name: Build the per-user list
-    ansible.builtin.set_fact:
-      _ocp4_workload_rhoai3x_mint_users: >-
-        {{ ocp4_workload_rhoai3x_maas_client_mint_users
-           if (ocp4_workload_rhoai3x_maas_client_mint_users | length > 0)
-           else (range(1, (ocp4_workload_rhoai3x_maas_client_mint_user_count | int) + 1)
-                 | map('regex_replace', '^(.*)$',
-                       ocp4_workload_rhoai3x_maas_client_mint_user_prefix ~ '\1') | list) }}
-
-  - name: Read the existing per-user keys Secret
-    kubernetes.core.k8s_info:
-      api_version: v1
-      kind: Secret
-      name: "{{ ocp4_workload_rhoai3x_maas_client_userkeys_secret }}"
-      namespace: "{{ ocp4_workload_rhoai3x_maas_client_namespace }}"
-    register: _ocp4_workload_rhoai3x_mint_existing_userkeys
-
-  - name: Decode the existing per-user key map
-    ansible.builtin.set_fact:
-      _ocp4_workload_rhoai3x_mint_existing_keys: >-
-        {{ (_ocp4_workload_rhoai3x_mint_existing_userkeys.resources[0].data | default({}))
-           | dict2items
-           | map(attribute='key') | list }}
-    no_log: true
-
+  # The per-user list, the existing-keys Secret, and the decoded username list
+  # are all computed once in the idempotency pre-check near the top of this file
+  # (_ocp4_workload_rhoai3x_mint_users / _existing_userkeys / _existing_keys),
+  # so they are reused here rather than recomputed.
   - name: Mint a key for each user that does not already have one
     # One challenging-client grant per user (their own password), then a maas-api
     # mint as that user. Loop result is collected and merged after the loop.

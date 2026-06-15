@@ -160,6 +160,20 @@ gates the UI flag for exactly this reason).
 > Heavy, cluster-wide change. COO may be shared with `coo_incident_detection`;
 > teardown leaves COO intact unless `..._maas_observability_remove_coo: true`.
 
+> **Known residual (RHOAI 3.4 MaaS tech-preview defect).** Enabling Tenant
+> telemetry reconfigures the MaaS gateway (a gateway-wide `payload-processing`
+> `ext_proc` filter) and breaks the `X-MaaS-Username` header on the maas-api
+> **management** route. After observability is on, `GET`/`POST /maas-api/v1/*`
+> and the dashboard **Gen AI studio → API keys** page return **500**. **Model
+> inference and already-minted keys are unaffected** — the OpenWebUI client uses
+> the stored key Secrets, not the live management API. The role works around this
+> by minting all keys *before* deploying the observability backend
+> (`tasks/workload.yml`), and the key-mint task is a no-op on re-runs (it skips the
+> management route entirely when the key Secrets already exist), so the
+> degradation never blocks a provision or a re-run. The telemetry reconfig is
+> continuously re-asserted by a maas-controller reconcile (~every 5 min); it
+> cannot be reverted by a restart while telemetry stays enabled. File upstream.
+
 **b) Prometheus metrics (User Workload Monitoring)** — scraped from
 Limitador/Authorino/gateway. Query in **Observe → Metrics**:
 

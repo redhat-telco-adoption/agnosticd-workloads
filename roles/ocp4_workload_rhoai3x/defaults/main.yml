@@ -524,6 +524,15 @@ ocp4_workload_rhoai3x_guardrails_wait_delay: 10
 # telemetry. Heavy + cluster-wide; only runs when maas_enable is also true.
 # When true it also turns on the observabilityDashboard UI flag (see above).
 # See MAAS-SHOWCASE.md §4.
+#
+# KNOWN RESIDUAL (RHOAI 3.4 MaaS tech-preview defect): enabling Tenant telemetry
+# reconfigures the MaaS gateway (a gateway-wide payload-processing ext_proc
+# filter) and breaks X-MaaS-Username delivery on the maas-api MANAGEMENT route —
+# afterwards GET/POST /maas-api/v1/* (and the dashboard "Gen AI studio -> API
+# keys" page) return 500. MODEL INFERENCE and already-minted keys are unaffected.
+# This role therefore mints all keys in workload.yml BEFORE this backend is
+# deployed, and the key-mint task is a no-op on re-runs (see maas_mint_keys.yml),
+# so the degradation never blocks a provision. File upstream with Red Hat.
 # ---------------------------------------------------------------------------
 ocp4_workload_rhoai3x_maas_observability_deploy: false
 

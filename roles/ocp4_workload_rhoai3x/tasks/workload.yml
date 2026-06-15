@@ -111,6 +111,20 @@
          and ocp4_workload_rhoai3x_maas_already_healthy | default(false) | bool)
   ansible.builtin.include_tasks: maas_publish_sample.yml
 
+# Mint BEFORE observability. Enabling Tenant telemetry (maas_observability.yml)
+# reconfigures the MaaS gateway (a gateway-wide payload-processing ext_proc filter)
+# and breaks X-MaaS-Username delivery on the maas-api MANAGEMENT route, so
+# GET /maas-api/v1/models — the mint readiness probe — then 500s and minting can
+# never succeed. Model inference is unaffected, and the client uses the stored key
+# Secrets (not the live management API), so minting first then enabling telemetry
+# leaves the demo fully functional. See maas_mint_keys.yml and MAAS-SHOWCASE.md.
+- name: Mint MaaS API keys for the client (automated, Phase 2b)
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_client_deploy | bool
+  - ocp4_workload_rhoai3x_maas_client_automint | bool
+  ansible.builtin.include_tasks: maas_mint_keys.yml
+
 - name: Deploy the Models-as-a-Service observability backend (Option B)
   when:
   - ocp4_workload_rhoai3x_maas_enable | bool
@@ -118,13 +132,6 @@
   - not (ocp4_workload_rhoai3x_maas_skip_when_healthy | bool
          and ocp4_workload_rhoai3x_maas_already_healthy | default(false) | bool)
   ansible.builtin.include_tasks: maas_observability.yml
-
-- name: Mint MaaS API keys for the client (automated, Phase 2b)
-  when:
-  - ocp4_workload_rhoai3x_maas_enable | bool
-  - ocp4_workload_rhoai3x_maas_client_deploy | bool
-  - ocp4_workload_rhoai3x_maas_client_automint | bool
-  ansible.builtin.include_tasks: maas_mint_keys.yml
 
 - name: Deploy the MaaS client (OpenWebUI chat front-end)
   when:
