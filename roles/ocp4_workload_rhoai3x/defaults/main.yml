@@ -261,6 +261,19 @@ ocp4_workload_rhoai3x_model_ready_delay: 30
 # ---------------------------------------------------------------------------
 ocp4_workload_rhoai3x_maas_enable: false
 
+# --- Re-run safety guard ---
+# Re-running the full provision over an already-installed, healthy MaaS corrupts
+# the gateway auth chain: the observability path churns COO/OTel/perses (briefly
+# dropping perses-operator-service endpoints) while the publish path re-applies
+# the LLMInferenceService/Subscription/AuthPolicy, triggering a Tenant reconcile
+# that aborts on the perses conversion webhook and leaves Authorino corrupted
+# (does not self-heal). When this is true AND maas_health_check.yml positively
+# confirms MaaS is healthy, the two disruptive includes (maas_publish_sample.yml
+# and maas_observability.yml) are SKIPPED on the re-run. Set false to force their
+# re-application (e.g. an intentional repair or upgrade). First installs always
+# run fully — the health check only flips when every signal confirms health.
+ocp4_workload_rhoai3x_maas_skip_when_healthy: true
+
 # --- User Workload Monitoring (without it MaaS reports Degraded) ---
 ocp4_workload_rhoai3x_maas_uwm_enable: true
 

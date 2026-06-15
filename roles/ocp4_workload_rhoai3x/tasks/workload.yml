@@ -81,16 +81,42 @@
   when: ocp4_workload_rhoai3x_maas_enable | bool
   ansible.builtin.include_tasks: maas_enable.yml
 
+# Re-run safety: positively detect an already-healthy MaaS BEFORE the two
+# disruptive includes below, so they can be skipped on a re-run (re-applying
+# them over a live MaaS corrupts the gateway auth chain — see the task file and
+# the maas_skip_when_healthy default). Conservative: the fact is false unless
+# every health signal confirms, so first installs and repairs still run fully.
+- name: Check whether MaaS is already provisioned and healthy (re-run safety)
+  when: ocp4_workload_rhoai3x_maas_enable | bool
+  ansible.builtin.include_tasks: maas_health_check.yml
+
+- name: Note that disruptive MaaS re-apply is being skipped (already healthy)
+  when:
+  - ocp4_workload_rhoai3x_maas_enable | bool
+  - ocp4_workload_rhoai3x_maas_skip_when_healthy | bool
+  - ocp4_workload_rhoai3x_maas_already_healthy | default(false) | bool
+  ansible.builtin.debug:
+    msg: >-
+      MaaS was detected already provisioned and healthy, so the disruptive
+      re-apply steps (publish sample model + observability backend) are being
+      SKIPPED to avoid corrupting the live gateway auth chain. Override with
+      -e ocp4_workload_rhoai3x_maas_skip_when_healthy=false to force re-application
+      (e.g. for an intentional repair or upgrade).
+
 - name: Publish a sample model to Models-as-a-Service
   when:
   - ocp4_workload_rhoai3x_maas_enable | bool
   - ocp4_workload_rhoai3x_maas_publish_sample | bool
+  - not (ocp4_workload_rhoai3x_maas_skip_when_healthy | bool
+         and ocp4_workload_rhoai3x_maas_already_healthy | default(false) | bool)
   ansible.builtin.include_tasks: maas_publish_sample.yml
 
 - name: Deploy the Models-as-a-Service observability backend (Option B)
   when:
   - ocp4_workload_rhoai3x_maas_enable | bool
   - ocp4_workload_rhoai3x_maas_observability_deploy | bool
+  - not (ocp4_workload_rhoai3x_maas_skip_when_healthy | bool
+         and ocp4_workload_rhoai3x_maas_already_healthy | default(false) | bool)
   ansible.builtin.include_tasks: maas_observability.yml
 
 - name: Mint MaaS API keys for the client (automated, Phase 2b)
