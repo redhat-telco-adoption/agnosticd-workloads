@@ -539,6 +539,15 @@ ocp4_workload_rhoai3x_maas_observability_deploy: false
 # Cluster Observability Operator (may be shared with other workloads).
 ocp4_workload_rhoai3x_maas_coo_namespace: "openshift-cluster-observability-operator"
 ocp4_workload_rhoai3x_maas_coo_channel: "stable"
+# PINNED to v1.4.0: COO v1.5.0 (published to the stable channel 2026-06-15) ships a
+# perses-operator that launches the Perses server with --web.tls-min-version /
+# --web.tls-cipher-suites flags its bundled Perses image does not support, so
+# data-science-perses CrashLoopBackOffs ("flag provided but not defined:
+# -web.tls-min-version") and the RHOAI Observe & monitor dashboard 500s. v1.4.0 was
+# the last working release. Empty string = latest-in-channel (auto). When a starting
+# CSV is pinned, approval is forced Manual below so OLM cannot auto-upgrade past it;
+# unpin (set "") once a fixed COO (>= v1.5.1) lands.
+ocp4_workload_rhoai3x_maas_coo_starting_csv: "cluster-observability-operator.v1.4.0"
 
 # Red Hat build of OpenTelemetry — REQUIRED alongside COO. The RHOAI monitoring
 # stack (the platform Monitoring CR "default-monitoring") will NOT provision
