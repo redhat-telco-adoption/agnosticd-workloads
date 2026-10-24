@@ -52,6 +52,8 @@
     name: ocp4_workload_rhbk_microservices_workshop
   vars:
     ACTION: destroy
+    ocp4_workload_tenant_keycloak_username: '{{ _rhbk_workshop_cleanup_attendee }}'
+    ocp4_workload_tenant_namespace_username: '{{ _rhbk_workshop_cleanup_attendee }}'
     ocp4_workload_rhbk_microservices_workshop_attendee_id: '{{ _rhbk_workshop_cleanup_attendee }}'
     ocp4_workload_rhbk_microservices_workshop_tenant_namespace: '{{ _rhbk_workshop_cleanup_attendee }}-{{ ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix }}'
     ocp4_workload_rhbk_microservices_workshop_source_namespace: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_source_namespace }}'
