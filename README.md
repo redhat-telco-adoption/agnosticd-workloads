@@ -32,6 +32,9 @@ AgnosticD framework.
 |------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | [`ocp4_workload_ocp_troubleshooting_workshop`](roles/ocp4_workload_ocp_troubleshooting_workshop/README.md) | Deploys the OpenShift Troubleshooting Workshop — per-attendee namespaces with 19 broken lab scenarios across 6 modules |
 | [`ocp4_workload_coo_incident_detection`](roles/ocp4_workload_coo_incident_detection/README.md) | Deploys the COO Incident Detection Demo — full observability stack (Loki, Tempo, NetObserv, Lightspeed) with a simulated 5G Core edge site and 7-stage presenter walkthrough |
+| [`ocp4_workload_rhbk_microservices_workshop_prereqs`](roles/ocp4_workload_rhbk_microservices_workshop_prereqs/README.adoc) | Prepares the narrow shared Keycloak realm-creator group for the RHBK workshop |
+| [`ocp4_workload_rhbk_microservices_workshop`](roles/ocp4_workload_rhbk_microservices_workshop/README.adoc) | Applies packaged, digest-pinned RHBK microservices resources to one attendee namespace |
+| [`ocp4_workload_rhbk_microservices_workshop_cleanup`](roles/ocp4_workload_rhbk_microservices_workshop_cleanup/tasks/main.yml) | Removes only reservation-owned attendee resources |
 
 ## Usage with AgnosticD V2
 

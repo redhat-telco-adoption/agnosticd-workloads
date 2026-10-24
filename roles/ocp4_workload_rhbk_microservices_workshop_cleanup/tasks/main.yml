@@ -1,0 +1,23 @@
+---
+- name: Validate reservation cleanup inputs
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_num_users | int > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_user_prefix is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?-$')
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_user_prefix | length <= 35
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_source_namespace | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_showroom_namespace_base | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_namespace | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_route_name | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_admin_secret | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_cleanup_identity_provider | length > 0
+    fail_msg: 'Reservation-scoped cleanup requires a unique user prefix and user count.'
+
+- name: Remove workshop resources per attendee in reverse provision order
+  ansible.builtin.include_tasks: remove_attendee.yml
+  loop: >-
+    {{ range(ocp4_workload_rhbk_microservices_workshop_cleanup_num_users | int, 0, -1) | list }}
+  loop_control:
+    loop_var: _cleanup_user_number
+    label: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_user_prefix }}{{ _cleanup_user_number }}'

@@ -1,0 +1,444 @@
+---
+- name: Require attendee-scoped reservation values
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_source_namespace is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_source_namespace | length <= 63
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace | length <= 63
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace not in ['default', 'kube-node-lease', 'kube-public', 'kube-system', 'openshift']
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace is not match('^openshift-')
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace != ocp4_workload_rhbk_microservices_workshop_source_namespace
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace != ocp4_workload_rhbk_microservices_workshop_keycloak_namespace
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace not in ocp4_workload_rhbk_microservices_workshop_reserved_namespaces
+      - ocp4_workload_rhbk_microservices_workshop_attendee_id is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_attendee_id | length <= 43
+      - ocp4_workload_rhbk_microservices_workshop_realm_name is match('^[a-zA-Z0-9._-]+$')
+      - ocp4_workload_rhbk_microservices_workshop_realm_name | length <= 63
+      - ocp4_workload_rhbk_microservices_workshop_keycloak_namespace | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_keycloak_route_name | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_route_domain is match('^[A-Za-z0-9.-]+$')
+      - ocp4_workload_rhbk_microservices_workshop_route_domain | length <= 198
+      - ocp4_workload_rhbk_microservices_workshop_image_refs.keys() | sort == ['bff', 'frontend', 'inventory-api', 'notifications-api', 'orders-api', 'proxy']
+      - ocp4_workload_rhbk_microservices_workshop_image_refs.values() | select('match', '^[A-Za-z0-9._/:+-]+@sha256:[a-f0-9]{64}$') | list | length == 6
+      - ocp4_workload_rhbk_microservices_workshop_create_namespace | type_debug == 'bool'
+      - ocp4_workload_rhbk_microservices_workshop_reserved_namespaces | type_debug == 'list'
+      - ocp4_workload_rhbk_microservices_workshop_reserved_namespaces | select('match', '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') | list | length == ocp4_workload_rhbk_microservices_workshop_reserved_namespaces | length
+    fail_msg: >-
+      Supply the attendee namespace, attendee ID, realm name, route domain,
+      Keycloak Route namespace and name, and six
+      immutable image references. Shared namespaces are refused.
+
+- name: Inspect the requested namespace before preview namespace creation
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  register: ocp4_workload_rhbk_microservices_workshop_namespace_state
+  changed_when: false
+  when: ocp4_workload_rhbk_microservices_workshop_create_namespace | bool
+
+- name: Refuse an existing namespace without matching workshop ownership
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_namespace_state.resources | length == 0 or (ocp4_workload_rhbk_microservices_workshop_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - ocp4_workload_rhbk_microservices_workshop_namespace_state.resources | length == 0 or (ocp4_workload_rhbk_microservices_workshop_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == ocp4_workload_rhbk_microservices_workshop_attendee_id
+    fail_msg: 'The requested preview namespace exists but is not owned by this attendee.'
+  when: ocp4_workload_rhbk_microservices_workshop_create_namespace | bool
+
+- name: Create the explicitly authorized attendee preview namespace when absent
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels:
+          app.kubernetes.io/part-of: rhbk-workshop
+          app.kubernetes.io/managed-by: ansible
+          rhbk-workshop/managed: 'true'
+          rhbk-workshop/attendee: '{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+  when:
+    - ocp4_workload_rhbk_microservices_workshop_create_namespace | bool
+    - ocp4_workload_rhbk_microservices_workshop_namespace_state.resources | length == 0
+
+- name: Inspect the attendee namespace after optional creation
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  register: ocp4_workload_rhbk_microservices_workshop_owned_namespace_state
+  changed_when: false
+
+- name: Require the attendee namespace ownership markers
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources | length == 1
+      - (ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - (ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == ocp4_workload_rhbk_microservices_workshop_attendee_id
+    fail_msg: >-
+      The attendee namespace must already exist and carry matching workshop
+      ownership labels before this role can create resources in it.
+
+- name: Confirm the shared Keycloak route matches the configured HTTPS origin
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_route_name }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_namespace }}'
+  register: ocp4_workload_rhbk_microservices_workshop_keycloak_route
+  changed_when: false
+
+- name: Record observed Keycloak Route values for safe validation
+  ansible.builtin.set_fact:
+    ocp4_workload_rhbk_microservices_workshop_keycloak_route_host: "{{ ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources[0].spec.host if ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources | length == 1 else '' }}"
+    ocp4_workload_rhbk_microservices_workshop_keycloak_route_termination: "{{ (ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources[0].spec.tls | default({})).termination | default('') if ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources | length == 1 else '' }}"
+    ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective: "{{ (ocp4_workload_rhbk_microservices_workshop_keycloak_origin | default('', true)) if (ocp4_workload_rhbk_microservices_workshop_keycloak_origin | default('', true) | length > 0) else ('https://' ~ (ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources[0].spec.host if ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources | length == 1 else '')) }}"
+  changed_when: false
+
+- name: Require the prepared Keycloak route
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective is match('^https://[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - ocp4_workload_rhbk_microservices_workshop_keycloak_route.resources | length == 1 and ocp4_workload_rhbk_microservices_workshop_keycloak_route_host == (ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective | regex_replace('^https://', '')) and ocp4_workload_rhbk_microservices_workshop_keycloak_route_termination in ['reencrypt', 'edge']
+    fail_msg: 'The configured HTTPS Keycloak origin does not match the shared keycloak Route.'
+
+- name: Inspect runtime ConfigMaps and client Secrets before any writes
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: '{{ item.kind }}'
+    name: '{{ item.name }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  loop:
+    - {kind: ConfigMap, name: bff-config}
+    - {kind: ConfigMap, name: proxy-config}
+    - {kind: ConfigMap, name: proxy-runtime-config}
+    - {kind: ConfigMap, name: proxy-nginx}
+    - {kind: Secret, name: bff-client}
+    - {kind: Secret, name: orders-api-client}
+    - {kind: Secret, name: proxy-secrets}
+    - {kind: Secret, name: proxy-redis-auth}
+    - {kind: ConfigMap, name: frontend-nginx-config}
+  register: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state
+  changed_when: false
+  no_log: true
+
+- name: Refuse runtime ConfigMaps and Secrets owned by another workload
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 0 or (item.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - item.resources | length == 0 or (item.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == ocp4_workload_rhbk_microservices_workshop_attendee_id
+    fail_msg: 'A runtime ConfigMap or Secret name is occupied by a resource without this attendee ownership marker.'
+  loop: '{{ ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results }}'
+  no_log: true
+
+- name: Refuse an incomplete Redis secret pair before any writes
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 1 or ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[7].resources | length == 0
+    fail_msg: 'A Redis auth Secret exists without its matching proxy Secret; facilitator repair is required.'
+  no_log: true
+
+- name: Create private render directory
+  ansible.builtin.file:
+    path: '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}'
+    state: directory
+    mode: '0700'
+
+- name: Write immutable image map to private temporary storage
+  ansible.builtin.copy:
+    content: '{{ ocp4_workload_rhbk_microservices_workshop_image_refs | to_json }}'
+    dest: '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}/images.json'
+    mode: '0600'
+
+- name: Tenant-scope the packaged deployment resources
+  ansible.builtin.command:
+    argv:
+      - python3
+      - '{{ role_path }}/files/tenantize.py'
+      - --namespace
+      - '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+      - --source-namespace
+      - '{{ ocp4_workload_rhbk_microservices_workshop_source_namespace }}'
+      - --attendee-id
+      - '{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+      - --keycloak-origin
+      - '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}'
+      - --realm
+      - '{{ ocp4_workload_rhbk_microservices_workshop_realm_name }}'
+      - --route-domain
+      - '{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+      - --reserved-namespaces-json
+      - '{{ ocp4_workload_rhbk_microservices_workshop_reserved_namespaces | to_json }}'
+      - --images-json
+      - '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}/images.json'
+      - --output-dir
+      - '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}'
+  environment:
+    PYTHONDONTWRITEBYTECODE: '1'
+  changed_when: false
+
+- name: Read rendered tenant resources for collision checks
+  ansible.builtin.set_fact:
+    ocp4_workload_rhbk_microservices_workshop_rendered_resources: "{{ lookup('file', ocp4_workload_rhbk_microservices_workshop_render_dir ~ '/workloads.yaml') | from_yaml_all | reject('equalto', None) | list }}"
+  changed_when: false
+
+- name: Inspect each tenant resource name before applying
+  kubernetes.core.k8s_info:
+    api_version: '{{ item.apiVersion }}'
+    kind: '{{ item.kind }}'
+    name: '{{ item.metadata.name }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  loop: '{{ ocp4_workload_rhbk_microservices_workshop_rendered_resources }}'
+  register: ocp4_workload_rhbk_microservices_workshop_resource_state
+  changed_when: false
+
+- name: Refuse tenant resource name collisions
+  ansible.builtin.assert:
+    that:
+      - item.resources | length == 0 or (item.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - item.resources | length == 0 or (item.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == ocp4_workload_rhbk_microservices_workshop_attendee_id
+    fail_msg: 'A workload resource name is occupied by a resource without this attendee ownership marker.'
+  loop: '{{ ocp4_workload_rhbk_microservices_workshop_resource_state.results }}'
+
+- name: Apply attendee namespace application resources only
+  kubernetes.core.k8s:
+    state: present
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+    src: '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}/workloads.yaml'
+    wait: false
+
+- name: Reconcile frontend NGINX location snippet for the UBI NGINX include context
+  vars:
+    frontend_issuer_origin: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}'
+    frontend_orders_origin: 'https://orders-api-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+    frontend_legacy_origin: 'https://legacy-api-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+    frontend_legacy_enabled: false
+  ansible.builtin.set_fact:
+    ocp4_workload_rhbk_microservices_workshop_frontend_nginx_config: '{{ lookup("template", role_path ~ "/templates/frontend-nginx-default.conf.j2") }}'
+
+- name: Reconcile frontend NGINX location snippet ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: frontend-nginx-config
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels }}'
+      data:
+        default.conf: '{{ ocp4_workload_rhbk_microservices_workshop_frontend_nginx_config }}'
+
+- name: Restart frontend declaratively when its rendered NGINX configuration changes
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+      spec:
+        template:
+          metadata:
+            annotations:
+              rhbk-workshop/frontend-nginx-config-sha256: '{{ ocp4_workload_rhbk_microservices_workshop_frontend_nginx_config | hash("sha256") }}'
+
+- name: Reconcile BFF runtime configuration
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: bff-config
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels }}'
+      data:
+        OIDC_ISSUER: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}/realms/{{ ocp4_workload_rhbk_microservices_workshop_realm_name }}'
+        KEYCLOAK_HOST: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective | regex_replace("^https://", "") }}'
+        ORDERS_BASE_URL: http://orders-api:8080
+        LEGACY_BASE_URL: https://legacy-api.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}
+        LEGACY_ENABLED: 'false'
+
+- name: Reconcile proxy issuer and redirect runtime configuration
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: proxy-config
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels }}'
+      data:
+        issuer: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}/realms/{{ ocp4_workload_rhbk_microservices_workshop_realm_name }}'
+        redirect-url: 'https://proxy-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}/oauth2/callback'
+
+- name: Reconcile proxy browser runtime configuration
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: proxy-runtime-config
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels }}'
+      data:
+        config.json: >-
+          {{ {'authMode': 'proxy', 'issuer': ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective ~ '/realms/' ~ ocp4_workload_rhbk_microservices_workshop_realm_name, 'spaClientId': 'spa', 'ordersBaseUrl': 'https://proxy-' ~ ocp4_workload_rhbk_microservices_workshop_attendee_id ~ '.' ~ ocp4_workload_rhbk_microservices_workshop_route_domain ~ '/api', 'legacyBaseUrl': '', 'legacyEnabled': false} | to_json }}
+
+- name: Reconcile proxy NGINX runtime policy
+  vars:
+    proxy_host: 'proxy-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+    apps_domain: '{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+    proxy_legacy_enabled: false
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: proxy-nginx
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels }}'
+      data:
+        nginx.conf: >-
+          {{ lookup('template', role_path ~ '/templates/proxy-nginx.conf.j2') | replace('orders-api.' ~ ocp4_workload_rhbk_microservices_workshop_source_namespace ~ '.svc', 'orders-api') }}
+        security_headers.conf: |-
+          add_header X-Content-Type-Options nosniff always;
+          add_header X-Frame-Options DENY always;
+          add_header Referrer-Policy no-referrer always;
+          add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+          add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" always;
+
+- name: Create a private proxy cookie secret only when the proxy Secret is absent
+  ansible.builtin.command:
+    argv: [openssl, rand, -base64, '32']
+  register: ocp4_workload_rhbk_microservices_workshop_cookie_secret
+  changed_when: false
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 0
+  no_log: true
+
+- name: Create a private Redis password only when the proxy Secret is absent
+  ansible.builtin.command:
+    argv: [openssl, rand, -hex, '32']
+  register: ocp4_workload_rhbk_microservices_workshop_redis_password
+  changed_when: false
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 0
+  no_log: true
+
+- name: Keep newly generated Redis password for the attendee Secret
+  ansible.builtin.set_fact:
+    ocp4_workload_rhbk_microservices_workshop_redis_password_value: '{{ ocp4_workload_rhbk_microservices_workshop_redis_password.stdout | trim }}'
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 0
+  no_log: true
+
+- name: Reuse existing attendee Redis password without rotating it
+  ansible.builtin.set_fact:
+    ocp4_workload_rhbk_microservices_workshop_redis_password_value: '{{ ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources[0].data["redis-password"] | b64decode }}'
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 1
+  no_log: true
+
+- name: Create client Secret placeholders only when absent
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: '{{ item.name }}'
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels | combine({"rhbk-workshop/attendee": ocp4_workload_rhbk_microservices_workshop_attendee_id}) }}'
+      type: Opaque
+      stringData: '{{ item.data }}'
+  loop:
+    - name: bff-client
+      data:
+        BFF_CLIENT_SECRET: CHANGE_ME_IN_YOUR_NAMESPACE
+    - name: orders-api-client
+      data:
+        client-secret: CHANGE_ME_IN_YOUR_NAMESPACE
+  when: item_index < 2 and ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[item_index + 4].resources | length == 0
+  loop_control:
+    index_var: item_index
+  no_log: true
+
+- name: Create proxy Secret only when absent
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: proxy-secrets
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels | combine({"rhbk-workshop/attendee": ocp4_workload_rhbk_microservices_workshop_attendee_id}) }}'
+      type: Opaque
+      stringData:
+        client-secret: CHANGE_ME_IN_YOUR_NAMESPACE
+        cookie-secret: '{{ ocp4_workload_rhbk_microservices_workshop_cookie_secret.stdout | trim | replace("+", "-") | replace("/", "_") }}'
+        redis-password: '{{ ocp4_workload_rhbk_microservices_workshop_redis_password_value }}'
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[6].resources | length == 0
+  no_log: true
+
+- name: Create proxy Redis authentication Secret only when absent
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: proxy-redis-auth
+        namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+        labels: '{{ ocp4_workload_rhbk_microservices_workshop_resource_labels | combine({"rhbk-workshop/attendee": ocp4_workload_rhbk_microservices_workshop_attendee_id}) }}'
+      type: Opaque
+      stringData:
+        redis.conf: |-
+          bind 0.0.0.0
+          protected-mode yes
+          port 6379
+          requirepass {{ ocp4_workload_rhbk_microservices_workshop_redis_password_value }}
+          save ""
+          appendonly no
+          dir /data
+  when: ocp4_workload_rhbk_microservices_workshop_runtime_resource_state.results[7].resources | length == 0
+  no_log: true
+
+- name: Publish attendee-specific lab URLs and namespace to Showroom user data
+  agnosticd.core.agnosticd_user_info:
+    user: '{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+    data:
+      attendee_id: '{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+      attendee_namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+      keycloak_origin: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}'
+      realm_name: '{{ ocp4_workload_rhbk_microservices_workshop_realm_name }}'
+      issuer: '{{ ocp4_workload_rhbk_microservices_workshop_keycloak_origin_effective }}/realms/{{ ocp4_workload_rhbk_microservices_workshop_realm_name }}'
+      spa_url: 'https://spa-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+      bff_url: 'https://bff-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+      proxy_url: 'https://proxy-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}.{{ ocp4_workload_rhbk_microservices_workshop_route_domain }}'
+  no_log: false
+
+- name: Wait for each attendee application Deployment to become ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: '{{ item }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  loop: >-
+    {{ ['frontend', 'proxy-redis', 'orders-api', 'inventory-api', 'notifications-api'] +
+       (['bff', 'proxy'] if ocp4_workload_rhbk_microservices_workshop_wait_for_identity_apps else []) }}
+  register: ocp4_workload_rhbk_microservices_workshop_deployment_readiness
+  until: >-
+    ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources | length == 1 and
+    (ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources[0].status.readyReplicas | default(0) | int) >=
+    (ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources[0].spec.replicas | default(1) | int)
+  retries: 36
+  delay: 10
+  changed_when: false
+  failed_when: ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources | length != 1 or
+    (ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources[0].status.readyReplicas | default(0) | int) <
+    (ocp4_workload_rhbk_microservices_workshop_deployment_readiness.resources[0].spec.replicas | default(1) | int)

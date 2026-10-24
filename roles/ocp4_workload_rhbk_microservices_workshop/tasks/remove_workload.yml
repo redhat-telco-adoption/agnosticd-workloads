@@ -1,0 +1,68 @@
+---
+- name: Validate attendee cleanup scope
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace | length <= 63
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace not in ['default', 'kube-node-lease', 'kube-public', 'kube-system', 'openshift']
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace is not match('^openshift-')
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace != ocp4_workload_rhbk_microservices_workshop_source_namespace
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace != ocp4_workload_rhbk_microservices_workshop_keycloak_namespace
+      - ocp4_workload_rhbk_microservices_workshop_tenant_namespace not in ocp4_workload_rhbk_microservices_workshop_reserved_namespaces
+      - ocp4_workload_rhbk_microservices_workshop_attendee_id is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_attendee_id | length <= 43
+      - ocp4_workload_rhbk_microservices_workshop_keycloak_namespace | length > 0
+      - ocp4_workload_rhbk_microservices_workshop_reserved_namespaces | type_debug == 'list'
+    fail_msg: 'Cleanup requires the original attendee ID and attendee namespace; shared namespaces are refused.'
+
+- name: Inspect attendee namespace ownership before cleanup
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+  register: ocp4_workload_rhbk_microservices_workshop_owned_namespace_state
+  changed_when: false
+
+- name: Require attendee namespace ownership before cleanup
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources | length == 1
+      - (ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - (ocp4_workload_rhbk_microservices_workshop_owned_namespace_state.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == ocp4_workload_rhbk_microservices_workshop_attendee_id
+    fail_msg: 'Cleanup refused: the namespace is not marked as owned by this workshop attendee.'
+
+- name: Inspect workshop-owned resources in the attendee namespace
+  kubernetes.core.k8s_info:
+    api_version: '{{ item.api_version }}'
+    kind: '{{ item.kind }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_namespace }}'
+    label_selectors:
+      - 'rhbk-workshop/managed=true'
+      - 'rhbk-workshop/attendee={{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+  loop:
+    - {api_version: v1, kind: ConfigMap}
+    - {api_version: v1, kind: Secret}
+    - {api_version: v1, kind: Service}
+    - {api_version: apps/v1, kind: Deployment}
+    - {api_version: route.openshift.io/v1, kind: Route}
+    - {api_version: networking.k8s.io/v1, kind: NetworkPolicy}
+  register: ocp4_workload_rhbk_microservices_workshop_tenant_resources
+  changed_when: false
+  no_log: true
+
+- name: Remove only resources with this attendee's ownership labels
+  kubernetes.core.k8s:
+    state: absent
+    definition: '{{ resource }}'
+    wait: true
+    wait_timeout: 120
+  loop: '{{ ocp4_workload_rhbk_microservices_workshop_tenant_resources.results | map(attribute="resources") | flatten }}'
+  loop_control:
+    loop_var: resource
+    label: '{{ resource.kind }}/{{ resource.metadata.name }}'
+  no_log: true
+
+- name: Remove per-attendee temporary render directory
+  ansible.builtin.file:
+    path: '{{ ocp4_workload_rhbk_microservices_workshop_render_dir }}'
+    state: absent

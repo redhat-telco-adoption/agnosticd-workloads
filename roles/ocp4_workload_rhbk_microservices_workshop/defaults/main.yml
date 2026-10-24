@@ -1,0 +1,27 @@
+---
+# Reservation/config inputs must identify one user and one namespace. Cluster
+# values come from the AgnosticD config or generic cluster facts.
+ocp4_workload_rhbk_microservices_workshop_source_namespace: apps
+ocp4_workload_rhbk_microservices_workshop_tenant_namespace: ''
+ocp4_workload_rhbk_microservices_workshop_attendee_id: ''
+ocp4_workload_rhbk_microservices_workshop_keycloak_origin: ''
+ocp4_workload_rhbk_microservices_workshop_realm_name: ''
+# Sandbox reservations normally pre-create attendee namespaces. Set true only
+# for an explicitly authorized preview deployment where this role may create
+# the requested, attendee-scoped namespace.
+ocp4_workload_rhbk_microservices_workshop_create_namespace: false
+ocp4_workload_rhbk_microservices_workshop_reserved_namespaces: []
+# Attendees create their realm during the lab. Until it exists, OIDC-backed
+# BFF and proxy containers cannot complete discovery and should not block the
+# initial application deployment. Enable this only when the realm is ready.
+ocp4_workload_rhbk_microservices_workshop_wait_for_identity_apps: false
+ocp4_workload_rhbk_microservices_workshop_route_domain: '{{ openshift_cluster_ingress_domain | default("") }}'
+ocp4_workload_rhbk_microservices_workshop_image_refs: {}
+ocp4_workload_rhbk_microservices_workshop_keycloak_namespace: ''
+ocp4_workload_rhbk_microservices_workshop_keycloak_route_name: ''
+ocp4_workload_rhbk_microservices_workshop_render_dir: '/tmp/rhbk-workshop-rendered-{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'
+ocp4_workload_rhbk_microservices_workshop_resource_labels:
+  app.kubernetes.io/part-of: rhbk-workshop
+  app.kubernetes.io/managed-by: ansible
+  rhbk-workshop/managed: 'true'
+  rhbk-workshop/attendee: '{{ ocp4_workload_rhbk_microservices_workshop_attendee_id }}'

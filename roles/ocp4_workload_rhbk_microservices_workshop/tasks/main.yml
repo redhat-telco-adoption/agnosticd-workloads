@@ -1,0 +1,15 @@
+---
+# Follow the provision/destroy contract used by core_workloads roles.
+- name: Validate requested workload action
+  ansible.builtin.assert:
+    that:
+      - (ACTION | default('provision')) in ['provision', 'destroy']
+    fail_msg: "ACTION must be either 'provision' or 'destroy'."
+
+- name: Run workshop provision tasks
+  ansible.builtin.include_tasks: workload.yml
+  when: (ACTION | default('provision')) == 'provision'
+
+- name: Run workshop cleanup tasks
+  ansible.builtin.include_tasks: remove_workload.yml
+  when: (ACTION | default('provision')) == 'destroy'

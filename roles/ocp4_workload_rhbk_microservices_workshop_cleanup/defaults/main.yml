@@ -1,0 +1,10 @@
+---
+ocp4_workload_rhbk_microservices_workshop_cleanup_user_prefix: '{{ rhbk_workshop_tenant_user_prefix | default("user-" ~ guid ~ "-") }}'
+ocp4_workload_rhbk_microservices_workshop_cleanup_num_users: '{{ num_users | default(0) }}'
+ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_source_namespace: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_showroom_namespace_base: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_namespace: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_route_name: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_admin_secret: ''
+ocp4_workload_rhbk_microservices_workshop_cleanup_identity_provider: ''

@@ -1,0 +1,154 @@
+---
+- name: Set attendee-specific cleanup inputs
+  ansible.builtin.set_fact:
+    _rhbk_workshop_cleanup_attendee: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_user_prefix }}{{ _cleanup_user_number }}'
+
+- name: Inspect attendee Showroom namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_showroom_namespace_base }}-{{ _rhbk_workshop_cleanup_attendee }}'
+  register: _rhbk_workshop_showroom_namespace
+  changed_when: false
+
+- name: Validate Showroom namespace ownership
+  when: _rhbk_workshop_showroom_namespace.resources | length == 1
+  ansible.builtin.assert:
+    that:
+      - (_rhbk_workshop_showroom_namespace.resources[0].metadata.labels | default({})).get('creator', '') == 'agnosticd.core_workloads.ocp4_workload_showroom'
+      - (_rhbk_workshop_showroom_namespace.resources[0].metadata.labels | default({})).get('guid', '') == (guid | string)
+    fail_msg: 'Showroom namespace ownership does not match this reservation; refusing cleanup.'
+
+- name: Remove this attendee's Showroom namespace
+  when: _rhbk_workshop_showroom_namespace.resources | length == 1
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_showroom_namespace_base }}-{{ _rhbk_workshop_cleanup_attendee }}'
+    wait: true
+    wait_timeout: 120
+
+- name: Inspect attendee application namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: '{{ _rhbk_workshop_cleanup_attendee }}-{{ ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix }}'
+  register: _rhbk_workshop_app_namespace
+  changed_when: false
+
+- name: Validate application namespace ownership
+  when: _rhbk_workshop_app_namespace.resources | length == 1
+  ansible.builtin.assert:
+    that:
+      - (_rhbk_workshop_app_namespace.resources[0].metadata.labels | default({})).get('rhbk-workshop/managed', '') == 'true'
+      - (_rhbk_workshop_app_namespace.resources[0].metadata.labels | default({})).get('rhbk-workshop/attendee', '') == _rhbk_workshop_cleanup_attendee
+    fail_msg: 'Application namespace ownership does not match this attendee; refusing cleanup.'
+
+- name: Remove only attendee-owned application resources
+  when: _rhbk_workshop_app_namespace.resources | length == 1
+  ansible.builtin.include_role:
+    name: ocp4_workload_rhbk_microservices_workshop
+  vars:
+    ACTION: destroy
+    ocp4_workload_rhbk_microservices_workshop_attendee_id: '{{ _rhbk_workshop_cleanup_attendee }}'
+    ocp4_workload_rhbk_microservices_workshop_tenant_namespace: '{{ _rhbk_workshop_cleanup_attendee }}-{{ ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix }}'
+    ocp4_workload_rhbk_microservices_workshop_source_namespace: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_source_namespace }}'
+    ocp4_workload_rhbk_microservices_workshop_keycloak_namespace: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_namespace }}'
+    ocp4_workload_rhbk_microservices_workshop_reserved_namespaces:
+      - '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_source_namespace }}'
+
+- name: Remove attendee quota and application namespace
+  when: _rhbk_workshop_app_namespace.resources | length == 1
+  ansible.builtin.include_role:
+    name: agnosticd.namespaced_workloads.ocp4_workload_tenant_namespace
+  vars:
+    ACTION: destroy
+    ocp4_workload_tenant_namespace_username: '{{ _rhbk_workshop_cleanup_attendee }}'
+    ocp4_workload_tenant_namespace_suffixes:
+      - suffix: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_tenant_namespace_suffix }}'
+    ocp4_workload_tenant_namespace_use_cluster_quota: true
+
+- name: Read shared Keycloak administrator credentials
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_admin_secret }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_namespace }}'
+  register: _rhbk_workshop_keycloak_admin_secret
+  no_log: true
+
+- name: Discover the shared Keycloak route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_route_name }}'
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_keycloak_namespace }}'
+  register: _rhbk_workshop_keycloak_route
+  changed_when: false
+
+- name: Require the shared Keycloak route before account cleanup
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_keycloak_route.resources | length == 1
+      - _rhbk_workshop_keycloak_route.resources[0].spec.host | default('') | length > 0
+    fail_msg: 'Expected exactly one configured shared Keycloak Route; refusing account cleanup.'
+
+- name: Get shared Keycloak administrator token
+  ansible.builtin.uri:
+    url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/realms/master/protocol/openid-connect/token'
+    method: POST
+    validate_certs: false
+    body_format: form-urlencoded
+    body:
+      client_id: admin-cli
+      username: '{{ _rhbk_workshop_keycloak_admin_secret.resources[0].data.username | b64decode }}'
+      password: '{{ _rhbk_workshop_keycloak_admin_secret.resources[0].data.password | b64decode }}'
+      grant_type: password
+  register: _rhbk_workshop_keycloak_token
+  no_log: true
+
+- name: Find the exact attendee account in the master realm
+  ansible.builtin.uri:
+    url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/master/users?username={{ _rhbk_workshop_cleanup_attendee | urlencode }}&exact=true'
+    method: GET
+    validate_certs: false
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+  register: _rhbk_workshop_keycloak_user
+  no_log: true
+
+- name: Remove only the exact attendee account
+  when: _rhbk_workshop_keycloak_user.json | length == 1
+  ansible.builtin.uri:
+    url: >-
+      https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/master/users/{{ _rhbk_workshop_keycloak_user.json[0].id }}
+    method: DELETE
+    validate_certs: false
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: [204, 404]
+  no_log: true
+
+- name: Remove the attendee's OpenShift identity
+  when: _rhbk_workshop_keycloak_user.json | length == 1
+  kubernetes.core.k8s:
+    state: absent
+    api_version: user.openshift.io/v1
+    kind: Identity
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_cleanup_identity_provider }}:{{ _rhbk_workshop_keycloak_user.json[0].id }}'
+
+- name: Remove the attendee's OpenShift User object
+  when: _rhbk_workshop_keycloak_user.json | length == 1
+  kubernetes.core.k8s:
+    state: absent
+    api_version: user.openshift.io/v1
+    kind: User
+    name: '{{ _rhbk_workshop_cleanup_attendee }}'
+
+- name: Reject ambiguous attendee identity results
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_keycloak_user.json | length <= 1
+    fail_msg: 'More than one exact Keycloak account matched the attendee; refusing cleanup.'
+  no_log: true

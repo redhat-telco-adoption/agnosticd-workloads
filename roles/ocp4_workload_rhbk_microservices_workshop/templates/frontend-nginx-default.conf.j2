@@ -1,0 +1,10 @@
+add_header X-Content-Type-Options nosniff always;
+add_header Referrer-Policy no-referrer always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self' {{ frontend_issuer_origin }} {{ frontend_orders_origin }}{% if frontend_legacy_enabled %} {{ frontend_legacy_origin }}{% endif %}" always;
+
+location = /healthz { access_log off; return 200 'ok'; add_header Content-Type text/plain; }
+location = /config.json { add_header Cache-Control 'no-store' always; try_files $uri =404; }
+location = /auth/popup-callback { add_header Cache-Control 'no-store' always; rewrite ^ /auth/popup-callback/index.html last; }
+location = /auth/logout-callback { add_header Cache-Control 'no-store' always; rewrite ^ /auth/logout-callback/index.html last; }
+location ^~ /assets/ { add_header Cache-Control 'public, max-age=31536000, immutable' always; try_files $uri =404; }
+location / { add_header Cache-Control 'no-store' always; try_files $uri $uri/ /index.html; }

@@ -1,0 +1,186 @@
+---
+- name: Validate shared Keycloak inputs
+  ansible.builtin.assert:
+    that:
+      - ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_namespace is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_route_name is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+      - ocp4_workload_rhbk_microservices_workshop_prereqs_group_name == 'rhdp-realm-creators'
+
+- name: Inspect shared Keycloak Route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_namespace }}'
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_route_name }}'
+  register: _rhbk_workshop_keycloak_route
+  changed_when: false
+
+- name: Require the existing HTTPS Keycloak Route
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_keycloak_route.resources | length == 1
+      - _rhbk_workshop_keycloak_route.resources[0].spec.host | default('') | length > 0
+      - (_rhbk_workshop_keycloak_route.resources[0].spec.tls | default({})).termination | default('') in ['edge', 'reencrypt']
+    fail_msg: 'The baseline must provide a TLS Keycloak Route.'
+
+- name: Inspect shared Keycloak admin Secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: '{{ ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_namespace }}'
+    name: '{{ ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_admin_secret }}'
+  register: _rhbk_workshop_keycloak_admin_secret
+  changed_when: false
+  no_log: true
+
+- name: Require the existing Keycloak admin Secret
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_keycloak_admin_secret.resources | length == 1
+      - _rhbk_workshop_keycloak_admin_secret.resources[0].data.username | default('') | length > 0
+      - _rhbk_workshop_keycloak_admin_secret.resources[0].data.password | default('') | length > 0
+    fail_msg: 'The baseline must provide the Keycloak admin Secret.'
+  no_log: true
+
+- name: Set private Keycloak connection values
+  ansible.builtin.set_fact:
+    _rhbk_workshop_keycloak_origin: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}'
+    _rhbk_workshop_keycloak_admin_username: '{{ _rhbk_workshop_keycloak_admin_secret.resources[0].data.username | b64decode }}'
+    _rhbk_workshop_keycloak_admin_password: '{{ _rhbk_workshop_keycloak_admin_secret.resources[0].data.password | b64decode }}'
+  no_log: true
+
+- name: Obtain Keycloak admin token
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/realms/master/protocol/openid-connect/token'
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: '{{ _rhbk_workshop_keycloak_admin_username }}'
+      password: '{{ _rhbk_workshop_keycloak_admin_password }}'
+    status_code: 200
+  register: _rhbk_workshop_keycloak_token
+  no_log: true
+
+- name: Inspect the built-in create-realm role
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/roles/create-realm'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_create_realm_role
+  no_log: true
+
+- name: Find the workshop realm-creator group
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups?search={{ ocp4_workload_rhbk_microservices_workshop_prereqs_group_name }}&exact=true'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_groups_before
+  no_log: true
+
+- name: Refuse an ambiguous group match
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_groups_before.json | selectattr('name', 'equalto', ocp4_workload_rhbk_microservices_workshop_prereqs_group_name) | list | length <= 1
+    fail_msg: 'The workshop Keycloak group name is ambiguous.'
+
+- name: Create the workshop realm-creator group when absent
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups'
+    method: POST
+    body_format: json
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    body:
+      name: '{{ ocp4_workload_rhbk_microservices_workshop_prereqs_group_name }}'
+      attributes:
+        rhbk-workshop-managed:
+          - 'true'
+    status_code: 201
+  when: _rhbk_workshop_groups_before.json | selectattr('name', 'equalto', ocp4_workload_rhbk_microservices_workshop_prereqs_group_name) | list | length == 0
+  no_log: true
+
+- name: Read back the workshop realm-creator group
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups?search={{ ocp4_workload_rhbk_microservices_workshop_prereqs_group_name }}&exact=true'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_groups_after
+  no_log: true
+
+- name: Require exactly one workshop realm-creator group
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_groups_after.json | selectattr('name', 'equalto', ocp4_workload_rhbk_microservices_workshop_prereqs_group_name) | list | length == 1
+    fail_msg: 'Keycloak did not return exactly one workshop realm-creator group.'
+
+- name: Record the workshop group ID
+  ansible.builtin.set_fact:
+    _rhbk_workshop_group_id: "{{ (_rhbk_workshop_groups_after.json | selectattr('name', 'equalto', ocp4_workload_rhbk_microservices_workshop_prereqs_group_name) | list | first).id }}"
+  no_log: true
+
+- name: Inspect workshop group ownership attributes
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups/{{ _rhbk_workshop_group_id }}'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_group_detail
+  no_log: true
+
+- name: Inspect existing group realm-role mappings
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups/{{ _rhbk_workshop_group_id }}/role-mappings/realm'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_group_roles_before
+  no_log: true
+
+- name: Refuse a conflicting or unowned partial group
+  ansible.builtin.assert:
+    that:
+      - >-
+        (_rhbk_workshop_group_roles_before.json | map(attribute='name') | list == ['create-realm']) or
+        ((_rhbk_workshop_group_roles_before.json | length == 0) and
+         ((_rhbk_workshop_group_detail.json.attributes | default({})).get('rhbk-workshop-managed', []) == ['true']))
+    fail_msg: 'The workshop group has unexpected roles or an unowned partial state; manual ownership review is required.'
+
+- name: Grant only create-realm to an empty owned workshop group
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups/{{ _rhbk_workshop_group_id }}/role-mappings/realm'
+    method: POST
+    body_format: json
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    body:
+      - id: '{{ _rhbk_workshop_create_realm_role.json.id }}'
+        name: create-realm
+    status_code: 204
+  when: _rhbk_workshop_group_roles_before.json | length == 0
+  no_log: true
+
+- name: Verify exact group realm-role mappings
+  ansible.builtin.uri:
+    url: '{{ _rhbk_workshop_keycloak_origin }}/admin/realms/master/groups/{{ _rhbk_workshop_group_id }}/role-mappings/realm'
+    method: GET
+    headers:
+      Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
+    status_code: 200
+  register: _rhbk_workshop_group_roles_after
+  no_log: true
+
+- name: Require create-realm and no other direct realm role
+  ansible.builtin.assert:
+    that:
+      - _rhbk_workshop_group_roles_after.json | map(attribute='name') | list == ['create-realm']
+    fail_msg: 'The workshop group must have only the direct create-realm realm role.'
