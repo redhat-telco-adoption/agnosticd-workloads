@@ -1,0 +1,8 @@
+---
+dependencies: []
+galaxy_info:
+  role_name: ocp4_workload_rhbk_microservices_workshop_cleanup
+  author: RHDP workshop maintainers
+  description: Fail-closed cleanup of one reservation's workshop tenants
+  license: Apache-2.0
+  min_ansible_version: '2.15'

@@ -1,0 +1,40 @@
+= ocp4_workload_rhbk_microservices_workshop
+
+Deploys the existing RHBK microservices walkthrough into one pre-created attendee namespace on an existing OpenShift cluster. It does not provision a cluster, Keycloak, or realm, and it does not install operators.
+
+== Preconditions
+
+* The namespace configuration and reservation must supply one isolated namespace and one stable, DNS-safe attendee ID.
+* Six immutable OCI image references are provided for `frontend`, `bff`, `proxy`, `orders-api`, `inventory-api`, and `notifications-api`. The cluster can pull them without attendee credentials.
+* The shared Keycloak Route exists in the configured namespace, uses TLS, and matches the optional HTTPS origin override.
+* The attendee namespace exists and has `rhbk-workshop/managed=true` and `rhbk-workshop/attendee=<attendee-id>` labels. In Sandbox Tenant CI, set these through the verified `ocp4_workload_tenant_namespace_suffixes[].metadata.labels` input before this workload runs.
+* The target namespace must differ from the configured source namespace, the shared Keycloak namespace, system namespaces, and all explicitly reserved namespaces.
+* The service account running the workload can inspect the shared Keycloak Route and manage only the attendee namespace.
+* The attendee has separate, realm-scoped Keycloak administration credentials and creates their own realm during the lab.
+* Until that realm and its clients exist, the BFF and OAuth2 Proxy cannot finish OIDC discovery. The role waits for the frontend and API services by default; enable `ocp4_workload_rhbk_microservices_workshop_wait_for_identity_apps` after configuring the realm to require those deployments to be ready too.
+
+The role applies 25 deployment resources packaged in `files/workload-resources.yaml` into the attendee namespace using supplied immutable image references. The workshop source repository's `workshop/agnosticd-role/tools/package_manifests.py` regenerates that bundle from the six project Kustomize bases during development. The role does not clone application source, build images, read or write a shared image namespace, or write to the shared Keycloak namespace. Its two NGINX runtime templates are packaged under `templates/`.
+
+== Variables
+
+|===
+|Variable |Required |Meaning
+
+|`ocp4_workload_rhbk_microservices_workshop_source_namespace` |No |Namespace embedded in the packaged deployment manifests before tenantization; defaults to `apps` and is not a target-cluster namespace.
+|`ocp4_workload_rhbk_microservices_workshop_tenant_namespace` |Yes |Per-attendee namespace supplied by the reservation/config. No Sandbox-specific default is assumed.
+|`ocp4_workload_rhbk_microservices_workshop_attendee_id` |Yes |Stable DNS label, up to 43 characters.
+|`ocp4_workload_rhbk_microservices_workshop_keycloak_origin` |No |Optional HTTPS origin override; by default the role derives and validates it from the pre-existing shared Keycloak Route.
+|`ocp4_workload_rhbk_microservices_workshop_realm_name` |Yes |Realm the attendee creates in the lab; use a unique per-attendee value.
+|`ocp4_workload_rhbk_microservices_workshop_create_namespace` |No |Defaults to `false`; set `true` only for an authorized preview that needs a new namespace. Existing namespaces must carry matching workshop ownership labels.
+|`ocp4_workload_rhbk_microservices_workshop_reserved_namespaces` |No |Additional cluster-specific shared namespaces to refuse; defaults to an empty list. System namespaces and the configured Keycloak namespace are always refused.
+|`ocp4_workload_rhbk_microservices_workshop_route_domain` |Yes |Defaults from AgnosticD's discovered `openshift_cluster_ingress_domain`.
+|`ocp4_workload_rhbk_microservices_workshop_image_refs` |Yes |Map of the six app names to immutable `@sha256:` references readable by the cluster.
+|`ocp4_workload_rhbk_microservices_workshop_keycloak_namespace` |Yes |Namespace containing the pre-existing shared Keycloak instance; supplied by the cluster reservation/config.
+|`ocp4_workload_rhbk_microservices_workshop_keycloak_route_name` |Yes |Route name for the pre-existing Keycloak instance; supplied by the cluster reservation/config.
+|===
+
+== Actions
+
+`ACTION=provision` is the default. `ACTION=destroy` removes only objects labeled as managed by this workshop and owned by the matching attendee ID from the attendee namespace. It does not delete namespaces, images, shared Keycloak objects, or other users' resources.
+
+The code follows the provision/destroy role layout in `rhpds/core_workloads`'s `ocp4_workload_example`. If an operator is later required, use AgnosticD v2's `install_operator` role; no operator is needed for these attendee copies because the cluster baseline already has RHBK installed.

@@ -1,0 +1,237 @@
+worker_processes auto;
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+
+events { worker_connections 1024; }
+
+http {
+  map_hash_bucket_size 128;
+  map_hash_max_size 2048;
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  log_format proxy_json escape=json '{"time":"$time_iso8601","remote_addr":"$remote_addr","method":"$request_method","path":"$safe_path","status":$status,"bytes":$body_bytes_sent,"request_time":$request_time}';
+  access_log /dev/stdout proxy_json;
+  map $request_uri $safe_path {
+    ~^(?<request_path_without_query>[^?]*) $request_path_without_query;
+  }
+  sendfile on;
+  server_tokens off;
+  client_body_temp_path /tmp/client_body;
+  proxy_temp_path /tmp/proxy;
+  fastcgi_temp_path /tmp/fastcgi;
+  uwsgi_temp_path /tmp/uwsgi;
+  scgi_temp_path /tmp/scgi;
+  map "$request_method|$http_origin|$http_x_workshop_csrf" $unsafe_api_csrf_block {
+    default 1;
+    ~^(GET|HEAD|OPTIONS)\| 0;
+    "POST|https://{{ proxy_host }}|1" 0;
+    "PUT|https://{{ proxy_host }}|1" 0;
+    "PATCH|https://{{ proxy_host }}|1" 0;
+    "DELETE|https://{{ proxy_host }}|1" 0;
+    ~^(POST|PUT|PATCH|DELETE)\| 1;
+  }
+  upstream oauth2_proxy { server 127.0.0.1:4180; }
+  upstream orders_api { server orders-api.apps.svc:8080; }
+{% if proxy_legacy_enabled %}
+  upstream legacy_api { server {{ legacy_host_public_ip | default('legacy-api.' ~ apps_domain) }}:443; }
+{% endif %}
+
+  server {
+    listen 8080;
+    server_name {{ proxy_host }};
+    absolute_redirect off;
+    root /usr/share/nginx/html;
+    index index.html;
+    charset utf-8;
+
+    include /etc/nginx/security_headers.conf;
+    proxy_hide_header Authorization;
+    proxy_hide_header X-Auth-Request-Access-Token;
+    proxy_hide_header X-Forwarded-Access-Token;
+
+    location = /healthz {
+      access_log off;
+      return 200 "ok\n";
+    }
+    location = /healthz/auth {
+      access_log off;
+      proxy_pass http://oauth2_proxy/ready;
+      proxy_pass_request_body off;
+      proxy_set_header Content-Length "";
+      proxy_set_header Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header Cookie "";
+    }
+
+    location = /_auth {
+      internal;
+      proxy_pass http://oauth2_proxy/oauth2/auth;
+      proxy_pass_request_body off;
+      proxy_set_header Content-Length "";
+      proxy_set_header Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Uri $request_uri;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header Cookie $http_cookie;
+      proxy_set_header Authorization "";
+    }
+
+    location = /oauth2/start {
+      include /etc/nginx/security_headers.conf;
+      add_header Cache-Control "no-store" always;
+      proxy_pass http://oauth2_proxy/oauth2/start?rd=/;
+      proxy_set_header Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header Authorization "";
+    }
+    location = /oauth2/callback {
+      include /etc/nginx/security_headers.conf;
+      add_header Cache-Control "no-store" always;
+      proxy_pass http://oauth2_proxy;
+      proxy_set_header Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header Authorization "";
+    }
+    location ^~ /oauth2/ { return 404; }
+
+    location = /logout {
+      if ($request_method != POST) { return 405; }
+      if ($http_origin != "https://{{ proxy_host }}") { return 403; }
+      if ($http_x_workshop_csrf != "1") { return 403; }
+      include /etc/nginx/security_headers.conf;
+      add_header Cache-Control "no-store" always;
+      proxy_method GET;
+      proxy_pass http://oauth2_proxy/oauth2/sign_out?rd=/;
+      proxy_pass_request_body off;
+      proxy_set_header Content-Length "";
+      proxy_set_header Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header Cookie $http_cookie;
+      proxy_set_header Authorization "";
+    }
+    location ^~ /logout { return 404; }
+
+    location = /config.json {
+      include /etc/nginx/security_headers.conf;
+      add_header Cache-Control "no-store" always;
+      try_files $uri =404;
+    }
+
+    location = /api { return 404; }
+
+{% if proxy_legacy_enabled %}
+    location ^~ /api/legacy/ {
+      if ($unsafe_api_csrf_block = 1) { return 403; }
+      auth_request /_auth;
+      auth_request_set $access_token $upstream_http_x_auth_request_access_token;
+      auth_request_set $auth_cookie $upstream_http_set_cookie;
+      auth_request_set $auth_status $upstream_status;
+      error_page 401 = @api_unauthorized;
+      rewrite ^/api(/.*)$ $1 break;
+      proxy_pass https://legacy_api;
+      proxy_ssl_verify on;
+      # cert-manager's public ACME chain can include a cross-signed root.
+      # NGINX defaults to depth 1, which rejects that valid chain too early.
+      proxy_ssl_verify_depth 4;
+      proxy_ssl_trusted_certificate /etc/pki/extra/proxy-trust-bundle.pem;
+      proxy_ssl_server_name on;
+      proxy_ssl_name legacy-api.{{ apps_domain }};
+      proxy_set_header Host legacy-api.{{ apps_domain }};
+      proxy_set_header Authorization "Bearer $access_token";
+      proxy_set_header Cookie "";
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Access-Token "";
+      proxy_set_header X-Auth-Request-Access-Token "";
+      proxy_set_header X-Forwarded-User "";
+      proxy_set_header X-Forwarded-Groups "";
+      proxy_set_header X-Forwarded-Email "";
+      proxy_set_header X-Forwarded-Preferred-Username "";
+      proxy_set_header X-Auth-Request-User "";
+      proxy_set_header X-Auth-Request-Groups "";
+      proxy_set_header X-Auth-Request-Email "";
+      proxy_set_header X-Auth-Request-Preferred-Username "";
+      proxy_set_header X-Forwarded-Authorization "";
+      proxy_hide_header Authorization;
+      proxy_hide_header X-Auth-Request-Access-Token;
+      proxy_hide_header X-Forwarded-Access-Token;
+      include /etc/nginx/security_headers.conf;
+      add_header Set-Cookie $auth_cookie always;
+      add_header Cache-Control "no-store" always;
+    }
+{% else %}
+    location ^~ /api/legacy/ {
+      if ($unsafe_api_csrf_block = 1) { return 403; }
+      default_type application/json;
+      include /etc/nginx/security_headers.conf;
+      add_header Cache-Control "no-store" always;
+      return 503 '{"error":"legacy_disabled"}';
+    }
+{% endif %}
+
+    location /api/ {
+      if ($unsafe_api_csrf_block = 1) { return 403; }
+      auth_request /_auth;
+      auth_request_set $access_token $upstream_http_x_auth_request_access_token;
+      auth_request_set $auth_cookie $upstream_http_set_cookie;
+      error_page 401 = @api_unauthorized;
+      rewrite ^/api(/.*)$ $1 break;
+      proxy_pass http://orders_api;
+      proxy_set_header Host orders-api.apps.svc;
+      proxy_set_header Authorization "Bearer $access_token";
+      proxy_set_header Cookie "";
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host {{ proxy_host }};
+      proxy_set_header X-Forwarded-Access-Token "";
+      proxy_set_header X-Auth-Request-Access-Token "";
+      proxy_set_header X-Forwarded-User "";
+      proxy_set_header X-Forwarded-Groups "";
+      proxy_set_header X-Forwarded-Email "";
+      proxy_set_header X-Forwarded-Preferred-Username "";
+      proxy_set_header X-Auth-Request-User "";
+      proxy_set_header X-Auth-Request-Groups "";
+      proxy_set_header X-Auth-Request-Email "";
+      proxy_set_header X-Auth-Request-Preferred-Username "";
+      proxy_set_header X-Forwarded-Authorization "";
+      proxy_hide_header Authorization;
+      proxy_hide_header X-Auth-Request-Access-Token;
+      proxy_hide_header X-Forwarded-Access-Token;
+      include /etc/nginx/security_headers.conf;
+      add_header Set-Cookie $auth_cookie always;
+      add_header Cache-Control "no-store" always;
+    }
+
+    location @api_unauthorized {
+      default_type application/json;
+      include /etc/nginx/security_headers.conf;
+      add_header Set-Cookie $auth_cookie always;
+      add_header Cache-Control "no-store" always;
+      return 401 '{"error":"unauthorized"}';
+    }
+    location @login { return 302 /oauth2/start?rd=/; }
+
+    location / {
+      auth_request /_auth;
+      auth_request_set $auth_cookie $upstream_http_set_cookie;
+      error_page 401 = @login;
+      include /etc/nginx/security_headers.conf;
+      add_header Set-Cookie $auth_cookie always;
+      add_header Cache-Control "no-store" always;
+      try_files $uri $uri/ /index.html;
+    }
+  }
+}

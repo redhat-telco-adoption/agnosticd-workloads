@@ -1,0 +1,14 @@
+= ocp4_workload_rhbk_microservices_workshop_prereqs
+
+Runs once before the attendee loop on a cluster that already has OpenShift,
+RHBK, cert-manager, a trusted TLS Keycloak Route, and the
+`keycloak-initial-admin` Secret. It creates the `rhdp-realm-creators` group in
+the Keycloak master realm when absent and grants only the built-in
+`create-realm` role. An existing group is accepted only when its direct realm
+roles are exactly `create-realm`. It marks newly created groups so an
+interrupted run can finish the role mapping safely on retry.
+
+The role never installs an operator or changes the Keycloak CR. It leaves the
+group in place on `ACTION=destroy` because the group may be shared by other
+reservations. Sensitive admin credentials and bearer tokens are masked with
+`no_log`.

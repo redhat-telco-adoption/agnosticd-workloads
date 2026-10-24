@@ -1,0 +1,9 @@
+---
+- name: Validate requested workload action
+  ansible.builtin.assert:
+    that:
+      - (ACTION | default('provision')) in ['provision', 'destroy']
+
+- name: Reconcile workshop Keycloak prerequisite
+  ansible.builtin.include_tasks: workload.yml
+  when: (ACTION | default('provision')) == 'provision'

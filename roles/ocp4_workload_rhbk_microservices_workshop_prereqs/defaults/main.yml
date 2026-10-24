@@ -1,0 +1,5 @@
+---
+ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_namespace: keycloak
+ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_route_name: keycloak
+ocp4_workload_rhbk_microservices_workshop_prereqs_keycloak_admin_secret: keycloak-initial-admin
+ocp4_workload_rhbk_microservices_workshop_prereqs_group_name: rhdp-realm-creators
