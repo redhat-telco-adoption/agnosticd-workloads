@@ -102,7 +102,7 @@
   ansible.builtin.uri:
     url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/realms/master/protocol/openid-connect/token'
     method: POST
-    validate_certs: false
+    validate_certs: true
     body_format: form-urlencoded
     body:
       client_id: admin-cli
@@ -116,7 +116,7 @@
   ansible.builtin.uri:
     url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/{{ _rhbk_workshop_cleanup_attendee | urlencode }}'
     method: GET
-    validate_certs: false
+    validate_certs: true
     headers:
       Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
     status_code: [200, 404]
@@ -142,7 +142,7 @@
   ansible.builtin.uri:
     url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/{{ _rhbk_workshop_cleanup_attendee | urlencode }}'
     method: DELETE
-    validate_certs: false
+    validate_certs: true
     headers:
       Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
     status_code: [204, 404]
@@ -152,7 +152,7 @@
   ansible.builtin.uri:
     url: 'https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/master/users?username={{ _rhbk_workshop_cleanup_attendee | urlencode }}&exact=true'
     method: GET
-    validate_certs: false
+    validate_certs: true
     headers:
       Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
   register: _rhbk_workshop_keycloak_user
@@ -164,7 +164,7 @@
     url: >-
       https://{{ _rhbk_workshop_keycloak_route.resources[0].spec.host }}/admin/realms/master/users/{{ _rhbk_workshop_keycloak_user.json[0].id }}
     method: DELETE
-    validate_certs: false
+    validate_certs: true
     headers:
       Authorization: 'Bearer {{ _rhbk_workshop_keycloak_token.json.access_token }}'
     status_code: [204, 404]
